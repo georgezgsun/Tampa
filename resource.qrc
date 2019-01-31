@@ -1,0 +1,128 @@
+<RCC>
+    <qresource prefix="/logo">
+        <file alias="icon64">icon/logo/icon-64x64.png</file>
+        <file alias="icon96">icon/logo/icon-96x96.png</file>
+        <file alias="icon128">icon/logo/icon-128x128.png</file>
+        <file alias="icon256">icon/logo/icon-256x256.png</file>
+        <file alias="Splash">icon/hh1Graphics/SplashScreen-0a0a0a0.jpg</file>
+        <file alias="Splashpng">icon/hh1Graphics/SplashScreen-0a0a0a0.png</file>
+        <file alias="tampaBeep">icon/hh1Graphics/TampaBeep.wav</file>
+    </qresource>
+    <qresource prefix="/TastieraVirtuale">
+        <file alias="logo">keyboard/images/keyboard.png</file>
+        <file alias="passwdEcho">keyboard/images/encrypted.png</file>
+        <file alias="normalEcho">keyboard/images/decrypted.png</file>
+        <file alias="copy">keyboard/images/editcopy.png</file>
+        <file alias="paste">keyboard/images/editpaste.png</file>
+        <file alias="cut">keyboard/images/editcut.png</file>
+    </qresource>
+    <qresource prefix="/Entypo">
+        <file alias="arrowDown">icon/Entypo/arrow-bold-down.svg</file>
+        <file alias="arrowDown128">icon/Entypo/arrow-bold-down-128.png</file>
+        <file alias="arrowUp">icon/Entypo/arrow-bold-up.svg</file>
+        <file alias="arrowUp128">icon/Entypo/arrow-bold-up-128.png</file>
+        <file>icon/Entypo/controller-fast-backward.svg</file>
+        <file>icon/Entypo/controller-fast-backward-128.png</file>
+        <file>icon/Entypo/controller-fast-forward.svg</file>
+        <file>icon/Entypo/controller-fast-forward-128.png</file>
+        <file>icon/Entypo/controller-jump-to-start-128.png</file>
+        <file>icon/Entypo/controller-next-128.png</file>
+        <file>icon/Entypo/controller-paus.svg</file>
+        <file>icon/Entypo/controller-paus-128.png</file>
+        <file>icon/Entypo/controller-play.svg</file>
+        <file>icon/Entypo/controller-play-128.png</file>
+        <file>icon/Entypo/controller-record-128.png</file>
+        <file>icon/Entypo/controller-stop-128.png</file>
+        <file>icon/Entypo/controller-volume-128.png</file>
+    </qresource>
+ <qresource prefix="/hh1">
+        <file alias="splash1920">icon/hh1Graphics/Splash-1920x1080.png</file>
+        <file alias="splash">icon/hh1Graphics/SplashScreen-2.png</file>
+        <file alias="splash480svg">icon/hh1Graphics/SplashScreen-1.svg</file>
+        <file alias="vehicle3">icon/hh1Graphics/vehicle-3.png</file>
+        <file alias="vehicle4">icon/hh1Graphics/vehicle-4.png</file>
+        <file alias="vehicle2-2">icon/hh1Graphics/vehicle-2-2.png</file>
+        <file alias="vehicke1-2">icon/hh1Graphics/vehicle-1-2.png</file>
+        <file alias="stop-mo">icon/hh1Graphics/stop-2-mo.png</file>
+        <file alias="stop">icon/hh1Graphics/stop-2.png</file>
+        <file alias="blue-button-mo">icon/hh1Graphics/blue-button-2-mo.png</file>
+        <file alias="blue-button">icon/hh1Graphics/blue-button-2.png</file>
+        <file alias="record-mo">icon/hh1Graphics/record-2-mo.png</file>
+        <file alias="record">icon/hh1Graphics/record-2.png</file>
+        <file alias="arrow-up-mo">icon/hh1Graphics/arrow-up-mo.png</file>
+        <file alias="arrow-up">icon/hh1Graphics/arrow-up.png</file>
+        <file alias="arrow-down-mo">icon/hh1Graphics/arrow-down-mo.png</file>
+        <file alias="arrow-down">icon/hh1Graphics/arrow-down.png</file>
+        <file alias="blue-bkg">icon/hh1Graphics/blue-bkg.png</file>
+        <file alias="vehicle-2">icon/hh1Graphics/vehicle-2.png</file>
+        <file alias="vehicle-1">icon/hh1Graphics/vehicle-1.png</file>
+        <file alias="target-4">icon/hh1Graphics/Target-4.png</file>
+        <file alias="target-3">icon/hh1Graphics/Target-3.png</file>
+        <file alias="target-2">icon/hh1Graphics/Target-2.png</file>
+        <file alias="target-1">icon/hh1Graphics/Target-1.png</file>
+        <file alias="target-4-2">icon/hh1Graphics/Target-4-2.png</file>
+        <file alias="target-3-2">icon/hh1Graphics/Target-3-2.png</file>
+        <file alias="target-2-2">icon/hh1Graphics/Target-2-2.png</file>
+        <file alias="target-1-2">icon/hh1Graphics/Target-1-2.png</file>
+    </qresource>
+	<qresource prefix="/dynamic">
+        <file alias="battery-0">icon/dynamic/Battery-0.svg</file>
+        <file alias="battery-1">icon/dynamic/Battery-1.svg</file>
+        <file alias="battery-2">icon/dynamic/Battery-2.svg</file>
+        <file alias="battery-3">icon/dynamic/Battery-3.svg</file>
+        <file alias="battery-4">icon/dynamic/Battery-4.svg</file>
+        <file alias="BT-off">icon/dynamic/Bluetooth-off.svg</file>
+        <file alias="BT-on">icon/dynamic/Bluetooth-on.svg</file>
+        <file alias="disk-0">icon/dynamic/Disk-0.svg</file>
+        <file alias="disk-1">icon/dynamic/Disk-1.svg</file>
+        <file alias="disk-2">icon/dynamic/Disk-2.svg</file>
+        <file alias="disk-3">icon/dynamic/Disk-3.svg</file>
+        <file alias="disk-4">icon/dynamic/Disk-4.svg</file>
+        <file alias="GPS-off">icon/dynamic/GPS-off.svg</file>
+        <file alias="GPS-on">icon/dynamic/GPS-on.svg</file>
+        <file alias="wifi-1">icon/dynamic/WiFi-1.svg</file>
+        <file alias="wifi-2">icon/dynamic/WiFi-2.svg</file>
+        <file alias="wifi-3">icon/dynamic/WiFi-3.svg</file>
+        <file alias="wifi-4">icon/dynamic/WiFi-4.svg</file>
+        <file alias="wifi-0">icon/dynamic/WiFi-off.svg</file>
+    </qresource>
+    <qresource prefix="/hh1Graphics">
+        <file>icon/hh1Graphics/Target-3.png</file>
+        <file>icon/hh1Graphics/record-2-mo.png</file>
+        <file>icon/hh1Graphics/Video-Play-Pause.png</file>
+        <file>icon/hh1Graphics/record-2.png</file>
+        <file alias="blue-button">icon/hh1Graphics/blue-button-2.png</file>
+        <file>icon/hh1Graphics/blue-button-2-mo.png</file>
+        <file>icon/hh1Graphics/Target-3-2.png</file>
+        <file alias="arrow-down">icon/hh1Graphics/arrow-down.png</file>
+        <file>icon/hh1Graphics/vehicle-1.png</file>
+        <file>icon/hh1Graphics/SplashScreen-1.svg</file>
+        <file>icon/hh1Graphics/vehicle-2-2.png</file>
+        <file>icon/hh1Graphics/vehicle-4.png</file>
+        <file>icon/hh1Graphics/SplashScreen-2.png</file>
+        <file>icon/hh1Graphics/Video-F-B.png</file>
+        <file>icon/hh1Graphics/arrow-up-mo.png</file>
+        <file>icon/hh1Graphics/arrow-down-mo.png</file>
+        <file>icon/hh1Graphics/Target-2.png</file>
+        <file>icon/hh1Graphics/Video-FF-L-R.png</file>
+        <file alias="Splash">icon/hh1Graphics/Splash-1920x1080.png</file>
+        <file>icon/hh1Graphics/stop-2-mo.png</file>
+        <file>icon/hh1Graphics/Login-Design-1.png</file>
+        <file>icon/hh1Graphics/vehicle-1-2.png</file>
+        <file>icon/hh1Graphics/vehicle-3.png</file>
+        <file>icon/hh1Graphics/Target-4.png</file>
+        <file>icon/hh1Graphics/Video-F-B-mo.png</file>
+        <file>icon/hh1Graphics/Target-4-2.png</file>
+        <file>icon/hh1Graphics/Video-Stop-Pause.png</file>
+        <file>icon/hh1Graphics/stop-2.png</file>
+        <file alias="blue-bkg">icon/hh1Graphics/blue-bkg.png</file>
+        <file>icon/hh1Graphics/Target-1.png</file>
+        <file>icon/hh1Graphics/Target-2-2.png</file>
+        <file>icon/hh1Graphics/Target-1-2.png</file>
+        <file alias="arrow-up">icon/hh1Graphics/arrow-up.png</file>
+        <file>icon/hh1Graphics/vehicle-2.png</file>
+        <file>icon/hh1Graphics/Video-FF-L-R-mo.png</file>
+        <file>icon/hh1Graphics/40x40-blue-button-0a0a0a.png</file>
+        <file>icon/hh1Graphics/40x272-blue-bkg-0a0a0a.png</file>
+    </qresource>
+</RCC>

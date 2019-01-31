@@ -1,0 +1,37 @@
+December 29, 2016: Summary of code for temporary suspension of the Lidar project.
+
+1. Architecture Design
+
+Bsed on the requirements of Tim Hoth's "Portland Menu System" (September 2015),  The project is designed into three major blocks: top view, memu view, and utilities.  
+
+The top view (class topView) is the main operation view.  The application starts up by displaying the project logo, login screen, and eventually opens the top operation view.  The top operation view consists of two parts, the camera viewfinder and a right widget frame showing the device status and push buttons for other functions.  The device status warning icons and radar data are also dispalyed in the camera viewfinder.  The "RECORD" button in the widget frame starts the recording funtion while the "MENU" button leads to the menu view.
+
+The menu view (class menuView) supports the configuration menus for this device.  Some functions, like video play back and files transfer, are also supported from this menu view.  This view consists of three portions: the menu, a device status ribbon on the left, and function selection widget frame on the right.  Some menu items may lead to a sub-menu.  When a sub-menu is opened, its parent menu is saved on a stack for restoring.
+
+The utilities (class Utils) provides interfaces to access the database, virtual keyboard, and radar emulator.  The database contains system configuration information.  The Utils class is designed as a singleton to ensure a single access to the utility resources.
+
+2.  Command Line Inport
+
+To start the program, type the following command:
+
+# lidarCam -plugin tslib
+
+The tslib plugin is neccessary because it supports the touch screen function.  Other functionalities or process options may be implemented on request.  Once the application is started, the database file and recorded files are stored in directores based on system environment variables, if they are set.  Else, the files are stored in default directories.
+
+3. Implementations Accomplished
+
+a) All menu framework
+b) Database framework
+c) Virtual keyboard and customized widgets to cooperate with the keyboard
+d) Device status frame
+e) The user manager and its database tables and APIs
+f) The file manager is partially finished
+g) Radar emulator is integrated into the application
+
+4. Future Works
+
+Most of the hardware dependent functions such as Lidar setup and system options are not implemented. These need to be implemented once a hardware module is functional and its firmware APIs are provided.
+ 
+
+
+

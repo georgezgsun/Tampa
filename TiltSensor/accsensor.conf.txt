@@ -1,0 +1,8 @@
+I2C_Device   /dev/i2c-1
+Xmax    1500
+Xmin    550
+Ymax    1502
+Ymin    568
+Zmax    1525
+Zmin    579
+

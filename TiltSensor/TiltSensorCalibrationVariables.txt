@@ -1,0 +1,24 @@
+HH1 Tilt and Magnetic sensor calibration variables
+
+Name		Type		Typical Value
+
+I2C_Device	text		/dev/i2c-1
+Mag_Xmax	float		738.0
+Mag_Xmin	float		-58.0
+Mag_Ymax	float		79.0
+Mag_Ymin	float		-601.0
+Mag_Zmax	float		2373.0
+Mag_Zmin	float		1584.0
+Mag_Theta_X	float		0.0
+Mag_Theta_Y	float		0.0
+Mag_Theta_Z	float		0.0
+Acc_Xmax	float		1000.0
+Acc_Xmin	float		-1000.0
+Acc_Ymax	float		1000.0
+Acc_Ymin	float		-1000.0
+Acc_Zmax	float		1000.0
+Acc_Zmin	float		-1000.0
+Acc_Theta_X	float		0.0
+Acc_Theta_Y	float		0.0
+Acc_Theta_Z	float		0.0
+
