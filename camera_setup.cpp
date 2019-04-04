@@ -22,26 +22,26 @@ cameraSetup::cameraSetup(QWidget *parent) :
     this->buildHashTables();
     this->setInittoggleValues();
 
-    m_command = CMD_ZOOM;
+    m_command = CMD_MODE;
     m_listIndex = 0;
-	state& v = state::get();
-    v.setState(STATE_ACC_MENU);
-
+    state& v = state::get();
+    v.setState(STATE_CAMERACONFIG);
     this->setInitFocus();
+
 
     //set initial color
     ui->wt_liveView->setStyleSheet(QStringLiteral("background-color: rgb(0, 0, 0);"));
 
-	hardButtons& u = hardButtons::get();
+    hardButtons& u = hardButtons::get();
 
     connect(ui->pb_exit, SIGNAL(clicked()), this, SLOT(onPbExitClicked()));
-	u.setHardButtonMap( 0, ui->pb_exit);
+    u.setHardButtonMap( 0, ui->pb_exit);
     connect(ui->pb_select, SIGNAL(clicked()), this, SLOT(onPbSelectClicked()));
-	u.setHardButtonMap( 1, ui->pb_select);
+    u.setHardButtonMap( 1, ui->pb_select);
     connect(ui->pb_up, SIGNAL(clicked()), this, SLOT(onPbUpClicked()));
-	u.setHardButtonMap( 2, ui->pb_up);
+    u.setHardButtonMap( 2, ui->pb_up);
     connect(ui->pb_down, SIGNAL(clicked()), this, SLOT(onPbDownClicked()));
-	u.setHardButtonMap( 3, ui->pb_down);
+    u.setHardButtonMap( 3, ui->pb_down);
 
 //    connect(ui->pb_select, SIGNAL(pressed()), this, SLOT(onPbSelectPressed()));
 }
@@ -53,106 +53,69 @@ cameraSetup::~cameraSetup()
 
 void cameraSetup::initLists()
 {
-    m_list << ui->lb_zoomVal
-           << ui->lb_focusVal
-           << ui->lb_shutterVal
-           << ui->lb_colorVal
-           << ui->lb_irisVal
-           << ui->lb_gainVal;
+    m_list << ui->pb_modeVal
+           << ui->pb_shutterVal
+           << ui->pb_gainVal
+           << ui->pb_evVal;
 
-    m_cmdList << CMD_ZOOM
-              << CMD_FOCUS
+    m_cmdList << CMD_MODE
               << CMD_SHUTTER
-              << CMD_COLOR
-              << CMD_IRIS
-              << CMD_GAIN;
+              << CMD_GAIN
+              << CMD_EV;
 
-    m_buddyList << ui->lb_zoom
-              << ui->lb_focus
-              << ui->lb_shutter
-              << ui->lb_color
-              << ui->lb_iris
-              << ui->lb_gain;
+    m_buddyList << ui->lb_mode
+                << ui->lb_shutter
+                << ui->lb_gain
+                << ui->lb_ev;
 }
 
 void cameraSetup::buildHashTables()
 {
-    int i;
-    QString s;
+    m_modeList << "AUTO" << "Shutter" << "Manual" ;
 
-    //zoom hashes
-    //m_zoomList << "";
-    for (i = ZOOM_MIN; i <= ZOOM_MAX; i++) {
-        s = QString("%1").arg(i);
-        m_zoomList << s;
-    }
-    m_hashValueList[CMD_ZOOM] = &m_zoomList;
-    m_hashValueIndex[CMD_ZOOM] = &m_zoomIdx;
-
-    //focus hashes
-    m_focusList << "AUTO" << "MANUAL";
-    m_hashValueList[CMD_FOCUS] = &m_focusList;
-    m_hashValueIndex[CMD_FOCUS] = &m_focusIdx;
+    m_hashValueList[CMD_MODE] = &m_modeList;
+    m_hashValueIndex[CMD_MODE] = &m_modeIdx;
 
     //shutter hashes
-    m_shutterList << "AUTO" << "1s" << "1/8" << "1/100" << "1/1000" << "1/2000" << "1/5000";
+    m_shutterList << "AUTO" << "1/10000 " << "1/1000" << "1/500" << "1/250" << "1/100" << "1/60" << "1/30"<<"1/15"<<"1/7.5";
     m_hashValueList[CMD_SHUTTER] = &m_shutterList;
     m_hashValueIndex[CMD_SHUTTER] = &m_shutterIdx;
 
-    //color hashes
-    m_colorList << "AUTO" << "MONO";
-    m_hashValueList[CMD_COLOR] = &m_colorList;
-    m_hashValueIndex[CMD_COLOR] = &m_colorIdx;
 
-    //iris hashes
-    m_irisList << "AUTO" << "1.8" << "2.5" << "3.6" << "4.0" << "5.6" << "8" << "11" << "16";
-    m_hashValueList[CMD_IRIS] = &m_irisList;
-    m_hashValueIndex[CMD_IRIS] = &m_irisIdx;
+    //ev hashes
+    m_evList << "0" << "50" << "100" << "150" << "200" << "250";
+    m_hashValueList[CMD_EV] = &m_evList;
+    m_hashValueIndex[CMD_EV] = &m_evIdx;
 
     //gain hashes
-    m_gainList << "AUTO";
-    for (i = GAIN_MIN; i <= GAIN_MAX; i++) {
-        s = QString("%1").arg(i);
-        m_gainList << s;
-    }
+    m_gainList << "AUTO" << "0dB" << "6dB" << "12dB" << "18dB" << "24dB";
+
     m_hashValueList[CMD_GAIN] = &m_gainList;
     m_hashValueIndex[CMD_GAIN] = &m_gainIdx;
 }
 
 void cameraSetup::setInittoggleValues()
 {
-    m_focusIdx =
-            m_zoomIdx =
+            m_modeIdx =
             m_shutterIdx =
-            m_colorIdx =
-            m_irisIdx =
+            m_evIdx =
             m_gainIdx = 0;
 
     this->querySetting();
     this->setDisplay();
 
-	// Only zoomIdx is set correctly here, others are zero
-	// Dislay is correct, indexs are wrong
-	//	DEBUG() << QRegExp("^" + QRegExp::escape(m_camSetting.zoom));
-	m_zoomIdx = m_zoomList.indexOf(QRegExp("^" + QRegExp::escape(m_camSetting.zoom)) );
-	DEBUG() << " index " << m_camSetting.index;
-	DEBUG() << " zoom " << m_camSetting.zoom;
-	DEBUG() << " zoomIdx " << m_zoomIdx;
-	DEBUG() << " focus" << m_camSetting.focus;
-	DEBUG() << " focus1" << m_camSetting.focus1;
-	DEBUG() << " shutter" << m_camSetting.shutter;
-	DEBUG() << " color" << m_camSetting.color;
-	DEBUG() << " iris" << m_camSetting.iris;
-	DEBUG() << " gain" << m_camSetting.gain;
+    // Only zoomIdx is set correctly here, others are zero
+    // Dislay is correct, indexs are wrong
+    //	DEBUG() << QRegExp("^" + QRegExp::escape(m_camSetting.zoom));
+    m_modeIdx = m_modeList.indexOf(QRegExp("^" + QRegExp::escape(m_camSetting.mode)) );
+    DEBUG() << " index " << m_camSetting.index;
+    DEBUG() << " mode " << m_camSetting.mode;
+    DEBUG() << " modeIdx " << m_modeIdx;
 
-#if 0
-    ui->lb_zoomVal->setText(m_zoomList[m_zoomIdx]);
-    ui->lb_focusVal->setText(m_focusList[m_focusIdx]);
-    ui->lb_shutterVal->setText(m_shutterList[m_shutterIdx]);
-    ui->lb_colorVal->setText(m_colorList[m_colorIdx]);
-    ui->lb_irisVal->setText(m_irisList[m_irisIdx]);
-    ui->lb_gainVal->setText(m_gainList[m_gainIdx]);
-#endif
+    DEBUG() << " shutter" << m_camSetting.shutter;
+
+    DEBUG() << " ev" << m_camSetting.ev;
+    DEBUG() << " gain" << m_camSetting.gain;
 
 }
 
@@ -201,31 +164,28 @@ void cameraSetup::querySetting()
 void cameraSetup::setDisplay()
 {
     struct CameraSetting& c = m_camSetting;
-    ui->lb_zoomVal->setText(c.zoom);
-    ui->lb_focusVal->setText(c.focus);
-    ui->lb_shutterVal->setText(c.shutter);
-    ui->lb_colorVal->setText(c.color);
-    ui->lb_irisVal->setText(c.iris);
-    ui->lb_gainVal->setText(c.gain);
+    ui->pb_modeVal->setText(c.mode);
+    ui->pb_shutterVal->setStyleSheet(m_blueText);
+    ui->pb_shutterVal->setText(c.shutter);
+    ui->pb_gainVal->setStyleSheet(m_blueText);
+    ui->pb_gainVal->setText(c.gain);
+    ui->pb_evVal->setStyleSheet(m_blueText);
+    ui->pb_evVal->setText(c.ev);
 }
 
 int cameraSetup::updateSetting()
 {
     struct CameraSetting& o = m_camSetting;
     struct CameraSetting c;
-    c.zoom = ui->lb_zoomVal->text();
-    c.focus = ui->lb_focusVal->text();
-    c.shutter = ui->lb_shutterVal->text();
-    c.color = ui->lb_colorVal->text();
-    c.iris = ui->lb_irisVal->text();
-    c.gain = ui->lb_gainVal->text();
+    c.mode = ui->pb_modeVal->text();
+    c.shutter = ui->pb_shutterVal->text();
+    c.ev = ui->pb_evVal->text();
+    c.gain = ui->pb_gainVal->text();
 
 
-    if ( c.zoom != o.zoom ||
-         c.focus != o.focus ||
+    if ( c.mode != o.mode ||
          c.shutter != o.shutter ||
-         c.color != o.color ||
-         c.iris != o.iris ||
+         c.ev != o.ev ||
          c.gain != o.gain ) {
         c.index = o.index;
         Utils& u = Utils::get();
@@ -241,10 +201,9 @@ int cameraSetup::updateSetting()
 void cameraSetup::toggleValue(int cmd, int idx, int /*f*/) {
 
     switch (cmd) {
-    case CMD_FOCUS_MANUAL:
-        return;
+
     default:
-        baseMenu::toggleValue(cmd, idx, 1);
+        baseMenu::toggleValue(cmd, idx, 2);
         break;
     }
 }
@@ -260,38 +219,38 @@ void cameraSetup::onPbExitClicked()
 }
 
 void cameraSetup::onPbDownClicked() {
-    QLabel *lb = qobject_cast<QLabel *>(m_list[m_listIndex]);
-	Utils& u = Utils::get();
-	u.sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
-	//    lb->setStyleSheet("");
-	//    m_buddy->setStyleSheet("");
-    lb->setStyleSheet(m_blueText);
+    QPushButton *pb = qobject_cast<QPushButton *>(m_list[m_listIndex]);
+    Utils& u = Utils::get();
+    u.sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
+    //    lb->setStyleSheet("");
+    //    m_buddy->setStyleSheet("");
+    pb->setStyleSheet(m_blueText);
     m_buddy->setStyleSheet(m_blueText);
 
     baseMenu::exeDownSelect();
 
-    lb = qobject_cast<QLabel *>(m_list[m_listIndex]);
+    pb = qobject_cast<QPushButton *>(m_list[m_listIndex]);
     m_buddy = qobject_cast<QLabel *>(m_buddyList[m_listIndex]);
 
-    lb->setStyleSheet(m_redText);
+    pb->setStyleSheet(m_redText);
     m_buddy->setStyleSheet(m_redText);
 }
 
 void cameraSetup::onPbUpClicked() {
-    QLabel *lb = qobject_cast<QLabel *>(m_list[m_listIndex]);
-	Utils& u = Utils::get();
-	u.sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
-	//    lb->setStyleSheet("");
-	//    m_buddy->setStyleSheet("");
-    lb->setStyleSheet(m_blueText);
+    QPushButton *pb = qobject_cast<QPushButton*>(m_list[m_listIndex]);
+    Utils& u = Utils::get();
+    u.sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
+    //    lb->setStyleSheet("");
+    //    m_buddy->setStyleSheet("");
+    pb->setStyleSheet(m_blueText);
     m_buddy->setStyleSheet(m_blueText);
 
     baseMenu::exeUpSelect();
 
-    lb = qobject_cast<QLabel *>(m_list[m_listIndex]);
+    pb = qobject_cast<QPushButton *>(m_list[m_listIndex]);
     m_buddy = qobject_cast<QLabel *>(m_buddyList[m_listIndex]);
 
-    lb->setStyleSheet(m_redText);
+    pb->setStyleSheet(m_redText);
     m_buddy->setStyleSheet(m_redText);
 }
 
@@ -302,73 +261,8 @@ void cameraSetup::onPbSelectClicked()
    Utils& u = Utils::get();
    u.sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
 
-   if (m_command == CMD_FOCUS_MANUAL)
-         return;
-
    this->toggleValue(m_command, m_listIndex);
 
-   //DEBUG() << "m_command = " << m_command;
-   //DEBUG() << "m_listIndex = " << m_listIndex;
-
-
-   if (m_command == CMD_ZOOM)
-   {
-      QLabel *lb = qobject_cast<QLabel *>(m_list.at(m_listIndex));
-
-      int zoomValue = 0;
-      zoomValue = lb->text().toInt();
-
-      //DEBUG() << "lb text " << lb->text();
-
-#ifdef LIDARCAM
-      int retv = u.sendCmdToCamera(m_command, zoomValue);
-
-      if (retv != 0)
-         qWarning() << "set camera zoom failed";
-#endif
-   }
-   else if (m_command == CMD_COLOR)
-   {
-      QLabel *lb = qobject_cast<QLabel *>(m_list.at(m_listIndex));
-      QProcess Play;
-      QString str = "/usr/local/stalker/bin/stalkerDayNight";
-      str.append( " " );
-
-      if (lb->text() == "AUTO")
-      {
-         str.append( QString::number( 1 ));		// auto is color
-
-         //		  DEBUG() << str;
-
-         Play.start( str );
-         Play.waitForFinished(1000);
-         int ret = Play.exitCode();
-
-         if( ret != 0 )
-            DEBUG() << "ret " << ret;
-      }
-      else
-      {
-         str.append( QString::number( 2 ));		// auto is night
-         Play.start( str );
-         Play.waitForFinished(1000);
-         int ret = Play.exitCode();
-
-         if( ret != 0 )
-            DEBUG() << "ret " << ret;
-      }
-   }
-   else if (m_command == CMD_FOCUS)
-   {
-#ifdef LIDARCAM
-      QLabel *lb = qobject_cast<QLabel *>(m_list.at(m_listIndex));
-
-      int retv = u.sendCmdToCamera(m_command, (int)lb->text().toLatin1().data());
-
-      if (retv != 0)
-         qWarning() << "set camera zoom failed";
-#endif
-   }
 }
 
 void cameraSetup::onPbSelectPressed() {
@@ -379,22 +273,22 @@ void cameraSetup::onPbSelectPressed() {
 
 
 }
-
 void cameraSetup::setInitFocus() {
     baseMenu::setInitFocus();
-    QLabel *lb = qobject_cast<QLabel *>(m_list[m_listIndex]);
+    QPushButton *pb = qobject_cast<QPushButton *>(m_list[m_listIndex]);
     m_buddy = qobject_cast<QLabel *>(m_buddyList[m_listIndex]);
-    lb->setStyleSheet(m_redText);
+    pb->setStyleSheet(m_redText);
     m_buddy->setStyleSheet(m_redText);
 }
 
+
 void cameraSetup::onPbExitPressed() {
-  
+
   Utils& u = Utils::get();
   u.sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
 
   hardButtons& h = hardButtons::get();
-  
+
   disconnect(ui->pb_exit);
   h.setHardButtonMap( 0, NULL);
   disconnect(ui->pb_select);
@@ -404,4 +298,47 @@ void cameraSetup::onPbExitPressed() {
   disconnect(ui->pb_down);
   h.setHardButtonMap( 3, NULL);
   close();
+}
+
+void cameraSetup::on_pb_modeVal_clicked()
+{
+    if (m_modeIdx < (m_modeList.size() - 1))
+           m_modeIdx++;
+       else
+           m_modeIdx = 0;
+       ui->pb_modeVal->setText(m_modeList.at(m_modeIdx));
+       Utils::get().sendCmdToCamera(CMD_MODE, m_modeIdx);
+
+}
+
+void cameraSetup::on_pb_shutterVal_clicked()
+{
+    if (m_shutterIdx < (m_shutterList.size() - 1))
+           m_shutterIdx++;
+       else
+           m_shutterIdx = 0;
+       ui->pb_shutterVal->setText(m_shutterList.at(m_shutterIdx));
+       Utils::get().sendCmdToCamera(CMD_SHUTTER, m_shutterIdx);
+}
+
+void cameraSetup::on_pb_gainVal_clicked()
+{
+
+    if (m_gainIdx < (m_gainList.size() - 1))
+           m_gainIdx++;
+       else
+           m_gainIdx = 0;
+       ui->pb_gainVal->setText(m_gainList.at(m_gainIdx));
+       Utils::get().sendCmdToCamera(CMD_GAIN, m_gainIdx);
+}
+
+void cameraSetup::on_pb_evVal_clicked()
+{
+
+    if (m_evIdx < (m_evList.size() - 1))
+           m_evIdx++;
+       else
+           m_evIdx = 0;
+       ui->pb_evVal->setText(m_evList.at(m_evIdx));
+       Utils::get().sendCmdToCamera(CMD_EV, m_evIdx);
 }

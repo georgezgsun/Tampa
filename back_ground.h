@@ -28,8 +28,14 @@ typedef struct saveData {
   float theta_vs;
   float theta_rs;
   float theta_hs;
+  float Xs;
+  float Zs;
+  float Zt;
+  float FocalLength;
   Targets_t Targets;
 } saveData;
+
+enum {NUM_TARGETS_SHOWN = 4};
 
 class backGround : public QThread
 {
@@ -52,6 +58,7 @@ public:
    void saveViolation( int timeMillieSecs,
 		       float theta_vs_ref, float theta_rs_ref, float theta_hs_ref, // base from the start
 		       float theta_vs,     float theta_rs,     float theta_hs,     // current values
+		       float Xs, float Zs, float Zt, float FocalLength,
 		       Targets_t *Targets );             // Radar data
 
 #endif
@@ -80,7 +87,7 @@ private:
    QString mFileName;
 
 
-   saveData violation;
+   saveData mViolation;
    
 #ifdef HH1
    pthread_t radarThreadId;

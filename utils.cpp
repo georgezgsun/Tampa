@@ -33,6 +33,7 @@
 #include <QIODevice>
 #include <QThread>
 #include <QSoundEffect>
+#include <linux/i2c-dev.h>
 
 using namespace std;
 
@@ -287,8 +288,9 @@ int Utils::setTransitData(int type, DBStruct *data)
         l->description = origL->description;
         l->speedLimit = origL->speedLimit;
         l->captureSpeed = origL->captureSpeed;
+        l->captureDistance= origL->captureDistance;
         l->roadCondition = origL->roadCondition;
-        l->numberLanes = origL->numberLanes;
+        l->numberOfLanes = origL->numberOfLanes;
         m_transitData = (DBStruct *)l;
         m_transitType = type;
     }
@@ -333,8 +335,9 @@ int Utils::getTransitData(int type, DBStruct *data)
         l->description = ((struct Location *)(m_transitData))->description;
         l->speedLimit = ((struct Location *)(m_transitData))->speedLimit;
         l->captureSpeed = ((struct Location *)(m_transitData))->captureSpeed;
+        l->captureDistance = ((struct Location *)(m_transitData))->captureDistance;
         l->roadCondition = ((struct Location *)(m_transitData))->roadCondition;
-        l->numberLanes = ((struct Location *)(m_transitData))->numberLanes;
+        l->numberOfLanes = ((struct Location *)(m_transitData))->numberOfLanes;
         break;
     }
     default:
@@ -428,6 +431,32 @@ int Utils::connectTILTMEM()
   tiltData = (Tilt_Buff *)mem;
   return 0;
 }	
+
+int Utils::connectFG()
+{
+  int FGID;
+  void *mem;
+
+  if ((FGID = shmget(FUEL_GAUGE_KEY, sizeof( struct Fuel_Gauge_Buff), 0777)) < 0) {
+    printf("%s(%d): shmget GOOD not created 0x%x errno %d \n\r", __FILE__, __LINE__, FGID, errno);
+    if ((FGID = shmget(FUEL_GAUGE_KEY, sizeof( struct Fuel_Gauge_Buff), IPC_CREAT | 0777)) < 0) {
+      printf("%s(%d): shmget failed\n\r", __FILE__, __LINE__);
+      return -1;
+    }
+  }
+  //	printf("%s(%d): shmget GOOD ID 0x%x Key 0x%x size %d\n\r", __FILE__, __LINE__, FGID, FG_KEY, sizeof(struct FG_Buff));
+  
+  // reuse the mem variable
+  mem = shmat(FGID, NULL, 0);
+  if (mem == NULL ) {
+    printf("%s(%d): shmat failed\n\r", __FILE__, __LINE__);
+    return -1;
+  }	
+  
+  printf("%s(%d): shmat GOOD %p \n\r", __FILE__, __LINE__,mem);
+  m_FGData = (Fuel_Gauge_Buff *)mem;
+  return 0;
+}
 
 int Utils::connectMAGMEM()
 {
@@ -547,24 +576,7 @@ int Utils::connectLidar()
     
     this->m_lidarConnected = 1;
 
-    if ((FGID = shmget(FUEL_GAUGE_KEY, sizeof( struct Fuel_Gauge_Buff), 0777)) < 0) {
-      printf("%s(%d): shmget GOOD not created 0x%x errno %d \n\r", __FILE__, __LINE__, FGID, errno);
-      if ((FGID = shmget(FUEL_GAUGE_KEY, sizeof( struct Fuel_Gauge_Buff), IPC_CREAT | 0777)) < 0) {
-		printf("%s(%d): shmget failed\n\r", __FILE__, __LINE__);
-		return -1;
-      }
-    }
-    //	printf("%s(%d): shmget GOOD ID 0x%x Key 0x%x size %d\n\r", __FILE__, __LINE__, FGID, FG_KEY, sizeof(struct FG_Buff));
-    
-	// reuse the mem variable
-    mem = shmat(FGID, NULL, 0);
-    if (mem == NULL ) {
-      printf("%s(%d): shmat failed\n\r", __FILE__, __LINE__);
-      return -1;
-    }	
-    
-    printf("%s(%d): shmat GOOD %p \n\r", __FILE__, __LINE__,mem);
-    m_FGData = (Fuel_Gauge_Buff *)mem;
+    connectFG();
 
     return 0;
 }
@@ -599,18 +611,22 @@ int Utils::sendCmdToCamera( int cmd, int value, int para1, int para2)
    
    switch (cmd)
    {
-#ifdef LIDARCAM
    case CMD_ZOOM:
       {
+#ifdef LIDARCAM
          value = (value > ZOOM_MAX) ? ZOOM_MAX : value;
          value = (value < ZOOM_MIN) ? ZOOM_MIN : value;
          memcpy((void *)data1, &(zoomValue[value - 1]), 4);
-         data1[4] = 0;  // Absolute position
+#else
+	 data1[0] = value;
+#endif
+	 data1[4] = 0;  // Absolute position
 //         data1[4] = 1;  // Zoom in relatively
          SndApproMsg(APPRO_ZOOMIN, data1, NULL);
          break;
       }
 
+#ifdef LIDARCAM
       case CMD_FOCUS:
       {
          char *focus = (char *)value;
@@ -692,7 +708,7 @@ int Utils::sendCmdToCamera( int cmd, int value, int para1, int para2)
 	 SysConfig& mConf = getConfiguration( 0 );
 	 DEBUG() << "postBuf " << mConf.postBuf << "preBuf " << mConf.preBuf;
 	 
-         data1[0] = mConf.preBuf + mConf.postBuf;    // recording seconds (< 256)
+         data1[0] = mConf.postBuf + mConf.preBuf;    // recording seconds (< 256)
          data1[1] = 0;     			     // recording minutes
          data1[2] = mConf.preBuf;                    // prebuffer seconds (< 10)
          data1[3] = 1;                               // audio on/off
@@ -739,7 +755,7 @@ int Utils::sendCmdToCamera( int cmd, int value, int para1, int para2)
       case CMD_SNAPSHOT:
       {
          char *filename = (char *)value;
-         data1[0] = 0;
+         data1[0] = 1;
          SndApproMsg(APPRO_SNAPSHOT, data1, filename);
          break;
       }
@@ -823,7 +839,7 @@ int Utils::sendCmdToCamera( int cmd, int value, int para1, int para2)
          break;
       }
 
-      case CMD_IRIS:
+      case CMD_EV:
       {
          data1[0] = (unsigned char)value;
          SndApproMsg(APPRO_IRIS, data1, NULL);
@@ -1615,6 +1631,7 @@ bool Utils::tiltSeen()
   return false;
 }
 
+#ifdef LIDARCAM
 void Utils::Send_Msg_To_PIC( int cmd )
 {
   struct Message_Queue_Buff Message_Buffer;
@@ -1646,17 +1663,10 @@ void Utils::Send_Msg_To_PIC( int cmd )
 
 int Utils::getDisplayUnits( void )
 {
-#ifdef HH1
-  return 0;
-#else
-#ifdef LIDARCAM
+  // Only used for LIDARCAM
   return m_lidarData->lidarStruct.DISPLAY_UNITS;
-#else
-   QString qs1 = "evidence1";
-   backGround::get().createJson(&qs1);
-#endif
-#endif
 }
+#endif
 
 #ifdef HH1
 int Utils::connectRADARMEM()
@@ -1715,6 +1725,9 @@ int Utils::SndApproMsg(int cmd, char *value, char *filename)
 #ifdef IS_TI_ARM
    int msg_size;
 
+   //   DEBUG() << "cmd " << cmd;
+   memset(&mMsgbuf, 0, sizeof(mMsgbuf));
+   
    mMsgbuf.des = MSG_TYPE_MSG1;
    mMsgbuf.src = 17;	//PROC_MSG_ID;
    mMsgbuf.cmd = cmd;
@@ -1722,7 +1735,8 @@ int Utils::SndApproMsg(int cmd, char *value, char *filename)
    mMsgbuf.speed = 0;
    mMsgbuf.range = 0;
    if (filename != NULL)
-      memcpy((void *)mMsgbuf.filename, filename, sizeof(mMsgbuf.filename));
+      //memcpy((void *)mMsgbuf.filename, filename, sizeof(mMsgbuf.filename));
+       strcpy(mMsgbuf.filename, filename);
    else
       mMsgbuf.filename[0] = '\0';
    msg_size = sizeof(mMsgbuf);
@@ -1742,8 +1756,9 @@ void Utils::takePhoto(QString & fileName, int distance)
   
   mDistance = distance;
   
-  long value = (long)fileName.toLatin1().data();
-  memcpy( (void *)buf, (void *)((char *)value), strlen((char *)value));
+  //long value = (long)fileName.toLatin1().data();
+  //memcpy( (void *)buf, (void *)((char *)value), strlen((char *)value));  //?
+  strcpy(buf, fileName.toStdString().c_str());
 #ifdef IS_TI_ARM
   sendCmdToCamera(CMD_SNAPSHOT, (int)buf);
 #endif
@@ -1772,11 +1787,34 @@ bool Utils::getRadarConfig(config_type* config)
     strcpy(config->serialPortDev,  "/dev/ttyS0");
     strcpy(config->serialBaudRate, "921600");
 #endif
+    SysConfig & cfg = getConfiguration();
+    // Need unit/ft/m and percision for thesse values
+    DEBUG() << "radarH " << cfg.radarH << " distFrR " << cfg.distFrR << " targetH " << cfg.targetH << " lensFocal " << cfg.lensFocal;
+
     config->radar_data_is_roadway = false;
-    config->Xs = -2.0f;
-    config->Zs = 1.7f;
-    config->Zt = 1.0f;
-    config->FocalLength = 25.0f;
+
+    // because system is using kph internally, so captureSpeed needs to be converted to kph
+    switch( cfg.units ) {
+    case 0: // MPH
+    case 2: // KNOTS
+      {
+	// convert feet to meters
+	config->Xs = (float)cfg.distFrR * 0.3048 ;		// sensor offset from roadway centerline / Distance from Center of Road
+	config->Zs = (float)cfg.radarH * 0.3048;		// sensor height above target / Radar Height
+	config->Zt = (float)cfg.targetH * 0.3048;		// target height 
+      }
+      break;
+    case 1: // km/h
+      config->Xs = cfg.distFrR;		// sensor offset from roadway centerline / Distance from Center of Road
+      config->Zs = cfg.radarH;		// sensor height above target / Radar Height
+      config->Zt = cfg.targetH;		// target height 
+      break;
+    default:
+     break;
+    }
+
+    config->FocalLength = (float)cfg.lensFocal;
+
     config->SensorWidth = 6.2f;   // IMX 172, pixel size = 1.55 u x 4000 pixels
     config->SensorHeight = 4.65f; // IMX 172, pixel size = 1.55 u x 3000 pixels
     config->FOVh = config->SensorWidth/config->FocalLength * 180/PI;  //(10.15 degrees)
@@ -1810,3 +1848,55 @@ void Utils::setVolume( int vol )
 
   return;
 }
+
+#ifdef HH1
+void Utils::updateFG( void )
+{
+  // HH1 get data here
+  QFile file("/sys/class/gpio/gpio113/value");
+  if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+    DEBUG() << "Open of /sys/class/gpio/gpio113/value failed";
+  } else {
+    int IsCharging = file.readAll().trimmed().toInt();
+    if ( IsCharging == 1 ) {
+      m_FGData->Is_Charging = false;
+    } else {
+      m_FGData ->Is_Charging = true;
+    }
+    file.close();
+  }
+  
+  //  DEBUG() << "Is_Charging " << m_FGData->Is_Charging;
+  
+  int i2c;
+  int ioc;
+#define ALL 256    
+  unsigned char buf[ALL];
+  
+  if ((i2c = open("/dev/i2c-1", O_RDWR)) < 0) {
+    DEBUG() << "Failed to open /dev/i2c-1";
+  } else {
+    // tell the driver we want the device with address 0x36 on the I2C bus
+    if ((ioc = ioctl(i2c, I2C_SLAVE, 0x36)) < 0) {
+      DEBUG() << "Ioctl failed ";
+    } else {
+      //	// write 5 to register 0x03
+      buf[0] = 0x00;    // register address
+      write(i2c, buf, 1);
+      
+      memset( buf, 0, ALL);
+      // read 1 bytes from register 0x03
+      read(i2c, buf, ALL);
+      
+      //	hexDump((char *)"data ", buf, ALL);
+
+      close( i2c);
+      m_FGData->State_Of_Charge = buf[4];
+#ifdef JUNK
+      int voltage = (unsigned short)buf[2] << 8 | (unsigned short)buf[3];
+      DEBUG() << "voltage " << voltage * 2.5;
+#endif
+    }      
+  }
+}    
+#endif

@@ -61,17 +61,15 @@ enum DB_TBL_ENTRIES {
     ETR_LOC_DECRIPTION,
     ETR_LOC_SPEED_LIMIT,
     ETR_LOC_CAPTURE_SPEED,
+    ETR_LOC_CAPTURE_DISTANCE,
     ETR_LOC_ROAD_CONDITION,
     ETR_LOC_NUM_LANES,
 
     //TBL_CAMERA_SETTING (CAMS)
     ETR_CAMS_INDEX,
-    ETR_CAMS_ZOOM,
-    ETR_CAMS_FOCUS,
-    ETR_CAMS_FOCUS1,
+    ETR_CAMS_MODE,
     ETR_CAMS_SHUTTER,
-    ETR_CAMS_COLOR,
-    ETR_CAMS_IRIS,
+    ETR_CAMS_EV,
     ETR_CAMS_GAIN,
 
     //....
@@ -126,14 +124,16 @@ struct Location {
     QString description;    //the content
     QString speedLimit;
     QString captureSpeed;
+    QString captureDistance;
     QString roadCondition;
-    int     numberLanes;
+    int     numberOfLanes;
 
     Location() {index = -1;}
     ~Location() {
         description.clear();
         speedLimit.clear();
         captureSpeed.clear();
+        captureDistance.clear();
         roadCondition.clear();
     }
 };
@@ -154,6 +154,7 @@ struct SysConfig {
     unsigned int speedTenths;
     unsigned int rangeTenths;
     unsigned int autoTrigger;
+    unsigned int audioAlert;
     unsigned int targetSort;
     unsigned int units;
     unsigned int direction;
@@ -163,15 +164,20 @@ struct SysConfig {
     unsigned int sensitivity;
     unsigned int imageSpacing;
     unsigned int volume;
+    unsigned int brightness;
     QString serialNumber;
 #endif
     unsigned int backlightOff;
     unsigned int powerOff;
-    unsigned int frames;
+    QString pictureDist;
     unsigned int resolution;
     unsigned int imagesPerFile;
     unsigned int preBuf;
     unsigned int postBuf;
+    float radarH;
+    float distFrR;
+    float targetH;
+    unsigned int lensFocal;
 
     SysConfig() {index = -1;}
     ~SysConfig() {}
@@ -218,22 +224,17 @@ struct Network {
 
 struct CameraSetting {
     int index;          //key, correlate to Location.index
-    QString zoom;
-    QString focus;
-    int focus1;         //manual focus value
+    QString mode;
     QString shutter;
-    QString color;
-    QString iris;
     QString gain;
+    QString ev;
 
     CameraSetting() { index = -1; }
     ~CameraSetting() {
-        zoom.clear();
-        focus.clear();
+        mode.clear();
         shutter.clear();
-        color.clear();
-        iris.clear();
         gain.clear();
+        ev.clear();
     }
 };
 

@@ -6,28 +6,43 @@
 #include "utils.h"
 #include "debug.h"
 #include "Lidar.h"
+#include "db_types.h"
 
 locSetup::locSetup(QWidget *parent) :
     baseMenu(parent),
     ui(new Ui::locSetup)
 {
     ui->setupUi(this);
+
 #ifdef LIDARCAM
     // Steven Cao, 11/29/2017
     Utils& u = Utils::get();
     struct Lidar_Buff *ptr = u.lidarDataBuf();
     LIDAR *pLidar = &(ptr->lidarStruct);
-    if (pLidar->DISPLAY_UNITS == 1)
+    int units = pLidar->DISPLAY_UNITS;
+#else
+    Utils& u = Utils::get();
+    SysConfig mConf = u.getConfiguration();
+    int units = mConf.units;
+#endif
+    if (units  == 0)
+        {
+            ui->lb_captSpd_2->setText("MPH");
+            ui->lb_spdLmt_2->setText("MPH");
+            ui->lb_capDist_2->setText("Feet");
+        }
+    else if ( units == 1)
     {
         ui->lb_captSpd_2->setText("km/h");
         ui->lb_spdLmt_2->setText("km/h");
+        ui->lb_capDist_2->setText("Meters");
     }
-    else if (pLidar->DISPLAY_UNITS == 2)
+    else if (units  == 2)
     {
         ui->lb_captSpd_2->setText("KNOTS");
         ui->lb_spdLmt_2->setText("KNOTS");
+        ui->lb_capDist_2->setText("Feet");
     }
-#endif
 
     this->initLists();
     this->buildHashTables();
@@ -57,18 +72,21 @@ locSetup::~locSetup()
     l.description = ui->le_location->text();
     l.speedLimit = ui->le_spdLmt->text();
     l.captureSpeed = ui->le_captSpd->text();
+    l.captureDistance = ui->le_captDist->text();
     l.roadCondition = ui->pb_roadCondition->text();
-    l.numberLanes = ui->le_lanes->text().toInt();
+    l.numberOfLanes = ui->pb_lanes->text().toInt();
     if (l.description.isNull() || l.description.isEmpty())
         l.description = " ";
     if (l.speedLimit.isNull() || l.speedLimit.isEmpty())
-        l.speedLimit = "65";
+        l.speedLimit = "40";
     if (l.captureSpeed.isNull() || l.captureSpeed.isEmpty())
-        l.captureSpeed = "70";
+        l.captureSpeed = "45";
+    if (l.captureDistance.isNull() || l.captureDistance.isEmpty())
+        l.captureDistance = "50";
     if (l.roadCondition.isNull() || l.roadCondition.isEmpty())
         l.roadCondition = "NORMAL";
-    if (!l.numberLanes)
-        l.numberLanes = 2;
+    if (!l.numberOfLanes)
+        l.numberOfLanes = 2;
 
     //update default location entry
     l.index = CAMS_DEFAULT_INDEX;
@@ -85,8 +103,9 @@ void locSetup::initLists()
            << ui->le_location
            << ui->le_spdLmt
            << ui->le_captSpd
+           << ui->le_captDist
            << ui->pb_roadCondition
-           << ui->le_lanes;
+           << ui->pb_lanes;
 
     m_cmdList << CMD_LOC_SAVE
            << CMD_LOC_LOAD
@@ -94,13 +113,14 @@ void locSetup::initLists()
            << CMD_LOC_DESC
            << CMD_SPD_LMT
            << CMD_CAPT_SPD
+           << CMD_CAPT_DIST
            << CMD_LOC_ENV
            << CMD_NUM_LANES;
 
     this->connectWidgetSigs();
 
 #ifdef HH1
-    ui->pb_camera->setVisible(false);
+   ui->pb_camera->setVisible(false);
 #endif
 }
 
@@ -108,8 +128,14 @@ void locSetup::buildHashTables()
 {
     m_envList << "NORMAL" << "RAIN" << "SLEET" << "SNOW" << "FOG" << "ICE" ;
     m_envIndex = 0;
+
+    m_laneList << "1" << "2" << "3"<< "4";
+    m_laneIndex = 0;
     m_hashValueList[CMD_LOC_ENV] = &m_envList;
     m_hashValueIndex[CMD_LOC_ENV] = &m_envIndex;
+
+    m_hashValueList[CMD_NUM_LANES] = &m_laneList;
+    m_hashValueIndex[CMD_NUM_LANES] = &m_laneIndex;
 }
 
 void locSetup::setInittoggleValues()
@@ -121,9 +147,11 @@ void locSetup::setInittoggleValues()
     l.index = CAMS_DEFAULT_INDEX;
 
     retv = u.db()->queryEntry(TBL_LOCATION, (DBStruct *)&l, QRY_BY_KEY);
+
     if (retv == 1)
     {
         retv = u.db()->getNextEntry(TBL_LOCATION, (DBStruct *)&l);
+
         if (retv)
         {
             DEBUG() << "Get default location setting failed";
@@ -137,8 +165,9 @@ void locSetup::setInittoggleValues()
             retv = m_envList.indexOf(l.roadCondition);
             m_envIndex = (retv >= 0) ? retv : 0;
             ui->pb_roadCondition->setText(m_envList.at(m_envIndex));
-            ui->le_lanes->setText(QString::number(l.numberLanes)) ;
+            ui->pb_lanes->setText(QString::number(l.numberOfLanes)) ;
             ui->le_captSpd->setText(l.captureSpeed);
+            ui->le_captDist->setText(l.captureDistance);
         }
     }
     else if (!retv)
@@ -146,13 +175,15 @@ void locSetup::setInittoggleValues()
         //add default location setting entry with the default settings
         ui->le_spdLmt->setText("65");
         ui->pb_roadCondition->setText(m_envList.at(m_envIndex));
-        ui->le_lanes->setText("2");
+        ui->pb_lanes->setText("2");
         ui->le_captSpd->setText("70");
+        ui->le_captDist->setText("50");
         l.description = " ";
         l.speedLimit = ui->le_spdLmt->text();
         l.captureSpeed = ui->le_captSpd->text();
+        l.captureDistance = ui->le_captDist->text();
         l.roadCondition = ui->pb_roadCondition->text();
-        l.numberLanes = ui->le_lanes->text().toInt();
+        l.numberOfLanes = ui->pb_lanes->text().toInt();
         retv = u.db()->addEntry(TBL_LOCATION, (DBStruct *)&l);
         if (retv)
         {
@@ -166,16 +197,14 @@ void locSetup::setInittoggleValues()
     {   // Use default
         ui->le_spdLmt->setText("65");
         ui->pb_roadCondition->setText(m_envList.at(m_envIndex));
-        ui->le_lanes->setText("2");
+        ui->pb_lanes->setText("1");
         ui->le_captSpd->setText("70");
+        ui->le_captDist->setText("50");
     }
 
     // Ticket 21465: temporary to do this, Steven Cao, 8/31/2018
-    ui->pb_camera->setEnabled(false);
-    ui->lb_rdCondition->setEnabled(false);
-    ui->pb_roadCondition->setEnabled(false);
-    ui->lb_numLanes->setEnabled(false);
-    ui->le_lanes->setEnabled(false);
+   ui->pb_camera->setEnabled(false);
+
 }
 
 void locSetup::toggleValue(int cmd, int idx, int /*f*/)
@@ -183,9 +212,10 @@ void locSetup::toggleValue(int cmd, int idx, int /*f*/)
     switch (cmd) {
     case CMD_SPD_LMT:
     case CMD_CAPT_SPD:
-    case CMD_NUM_LANES:
-        m_vkb->setNumKeyboard();
-        break;
+    case CMD_CAPT_DIST:
+
+       m_vkb->setNumKeyboard();
+       break;
     case CMD_LOC_DESC:
     case CMD_LOC_ENV:
         break;
@@ -228,8 +258,9 @@ void locSetup::setCmd()
         l.description = ui->le_location->text();
         l.speedLimit = ui->le_spdLmt->text();
         l.captureSpeed = ui->le_captSpd->text();
+        l.captureDistance = ui->le_captDist->text();
         l.roadCondition = ui->pb_roadCondition->text();
-        l.numberLanes = ui->le_lanes->text().toInt();
+        l.numberOfLanes = ui->pb_lanes->text().toInt();
 
         //set transit value
         u.setTransitData(CMD_LOC_SAVE, (DBStruct *)&l);
@@ -256,8 +287,9 @@ void locSetup::refreshData()
     ui->le_location->setText(m_currLoc.description);
     ui->le_spdLmt->setText(m_currLoc.speedLimit);
     ui->le_captSpd->setText(m_currLoc.captureSpeed);
+    ui->le_captDist->setText(m_currLoc.captureDistance);
     ui->pb_roadCondition->setText(m_currLoc.roadCondition);
-    ui->le_lanes->setText(QString("%1").arg(m_currLoc.numberLanes));
+    ui->pb_lanes->setText(QString("%1").arg(m_currLoc.numberOfLanes));
     u.setCurrentLoc(m_currLoc); // All can see this
 
     m_envIndex = m_envList.indexOf(m_currLoc.roadCondition);
@@ -288,68 +320,79 @@ void locSetup::on_pb_roadCondition_clicked()
     else
         m_envIndex = 0;
     ui->pb_roadCondition->setText(m_envList.at(m_envIndex));
+
 }
+
+void locSetup::on_pb_lanes_clicked()
+{
+    if (m_laneIndex < (m_laneList.size() - 1))
+        m_laneIndex++;
+    else
+        m_laneIndex = 0;
+    ui->pb_lanes->setText(m_laneList.at(m_laneIndex));
+}
+
 void locSetup:: doGPS()
 {
-  #ifdef LIDARCAM
-    Utils& u = Utils::get();
-
-	if( u.GPSBuf()->GPS_Fixed == true ) {
-	  // Get the float of lat/long
-	  double lat = atof( (const char*)u.GPSBuf()->Latitude );
-	  double lon = atof( (const char*)u.GPSBuf()->Longitude );
-	  
-	  // get the integer part of the lat/long
-	  int llat = (int) lat;
-	  int llon = (int) lon;
-	  // get the degree part of the lat/long 
-	  int llatH = llat / 100;  
-	  int llonH = llon / 100;  
-	  // Get the minutes part of the lat/long
-	  int llatMin = llat - (llatH * 100);
-	  int llonMin = llon - (llonH * 100);
-	  
-	  // get the fractional part of the lat/long
-	  double latf = lat - llat;
-	  double lonf = lon - llon;
-	  
-	  // caculate the second part of the lat/log
-	  double lats = 60.0 * latf;
-	  double lons = 60.0 * lonf;
-	  
-	  char latstring[50];
-	  memset(latstring, 0, 50);
-
-	  // create the lat string.
-	  if( u.GPSBuf()->Latitude_Direction == 'N' ) {
-        sprintf(latstring, "%02d\u00B0%02d\'%06.3f\"N", llatH, llatMin, lats);
-	  }else{
-        sprintf(latstring, "%02d\u00B0%02d\'%06.3f\"S", llatH, llatMin, lats);
-	  }
-	  
-	  char longstring[50];
-	  memset(longstring, 0, 50);
-	  
-	  // create the long string
-	  if( u.GPSBuf()->Longitude_Direction == 'W' ) {
-        sprintf(longstring, "%03d\u00B0%02d\'%06.3f\"W", llonH, llonMin, lons);
-	  }else{
-        sprintf(longstring, "%03d\u00B0%02d\'%06.3f\"E", llonH, llonMin, lons);
-	  }
-	  // string to QString conversion
-	  QString gpsInfo;
-	  gpsInfo.append( latstring );
-	  gpsInfo.append( "   " );
-	  gpsInfo.append( longstring );
-
-	  //	  DEBUG() << gpsInfo;
-	  
-	  ui->lb_gpsInfo->setText( gpsInfo );
-
-	}else{
-	  // No Gps data to display on the screen
-	  ui->lb_gpsInfo->setText( "No GPS Data" );
-	}
+#if defined(LIDARCAM) || defined(HH1)
+  Utils& u = Utils::get();
+  
+  if( u.GPSBuf()->GPS_Fixed == true ) {
+    // Get the float of lat/long
+    double lat = atof( (const char*)u.GPSBuf()->Latitude );
+    double lon = atof( (const char*)u.GPSBuf()->Longitude );
+    
+    // get the integer part of the lat/long
+    int llat = (int) lat;
+    int llon = (int) lon;
+    // get the degree part of the lat/long 
+    int llatH = llat / 100;  
+    int llonH = llon / 100;  
+    // Get the minutes part of the lat/long
+    int llatMin = llat - (llatH * 100);
+    int llonMin = llon - (llonH * 100);
+    
+    // get the fractional part of the lat/long
+    double latf = lat - llat;
+    double lonf = lon - llon;
+    
+    // caculate the second part of the lat/log
+    double lats = 60.0 * latf;
+    double lons = 60.0 * lonf;
+    
+    char latstring[50];
+    memset(latstring, 0, 50);
+    
+    // create the lat string.
+    if( u.GPSBuf()->Latitude_Direction == 'N' ) {
+      sprintf(latstring, "%02d\u00B0%02d\'%06.3f\"N", llatH, llatMin, lats);
+    }else{
+      sprintf(latstring, "%02d\u00B0%02d\'%06.3f\"S", llatH, llatMin, lats);
+    }
+    
+    char longstring[50];
+    memset(longstring, 0, 50);
+    
+    // create the long string
+    if( u.GPSBuf()->Longitude_Direction == 'W' ) {
+      sprintf(longstring, "%03d\u00B0%02d\'%06.3f\"W", llonH, llonMin, lons);
+    }else{
+      sprintf(longstring, "%03d\u00B0%02d\'%06.3f\"E", llonH, llonMin, lons);
+    }
+    // string to QString conversion
+    QString gpsInfo;
+    gpsInfo.append( latstring );
+    gpsInfo.append( "   " );
+    gpsInfo.append( longstring );
+    
+    //	  DEBUG() << gpsInfo;
+    
+    ui->lb_gpsInfo->setText( gpsInfo );
+    
+  }else{
+    // No Gps data to display on the screen
+    ui->lb_gpsInfo->setText( "No GPS Data" );
+  }
 #endif
 }
 
@@ -366,3 +409,4 @@ void locSetup::locSetupTimerHit( void )
   //  DEBUG();
   doGPS();
 }
+

@@ -125,6 +125,9 @@
      </property>
      <item row="0" column="1">
       <widget class="QPushButton" name="pb_modeSel">
+       <property name="enabled">
+        <bool>true</bool>
+       </property>
        <property name="minimumSize">
         <size>
          <width>0</width>
@@ -140,7 +143,7 @@
         </font>
        </property>
        <property name="text">
-        <string>MODE</string>
+        <string>UNIT</string>
        </property>
        <property name="flat">
         <bool>false</bool>

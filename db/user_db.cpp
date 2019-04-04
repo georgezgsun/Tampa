@@ -130,8 +130,9 @@ int userDB::initDB(QString &dbName)
     l.description = " ";
     l.speedLimit = "65";
     l.captureSpeed = "70";
-    l.roadCondition = "NORMAL";
-    l.numberLanes = 2;
+    l.captureDistance = "50";
+    l.roadCondition = "NORMAL";    
+    l.numberOfLanes = 2;
     Loc_addEntry(&l);
 
     struct SysConfig c1;
@@ -144,17 +145,18 @@ int userDB::initDB(QString &dbName)
     c1.speedTenths = 0;
     c1.rangeTenths = 0;
     c1.imageSpacing = 0;
-    c1.frames = 15;
+    c1.pictureDist = 15;
     c1.frequency = 24.0;
     c1.bandwidth = 100.0;
     c1.radarPower = 1;
     c1.sensitivity = 1;
     c1.volume = 2;
+    c1.brightness = 2;
     c1.serialNumber = QString("Not Defined");
 
     fp = fopen(STALKER_CONF_FILE,"r");
     if(!fp) {
-  	fprintf(stderr, "Unable to open accsensor.conf configuration file\n");
+  	fprintf(stderr, "Unable to open stalker.conf configuration file\n");
         return -1;
     }
 
@@ -181,9 +183,15 @@ int userDB::initDB(QString &dbName)
     c1.backlightOff = 0;
     c1.powerOff = 0;
     c1.resolution = 2;  // High resolution
-    c1.imagesPerFile = 2;
-    c1.preBuf = 10;     // 10 seconds
-    c1.postBuf = 10;
+    c1.imagesPerFile = 1;
+    c1.preBuf = 5;     // 5 seconds
+    c1.postBuf = 20;
+    c1.radarH = 4.0;
+    c1.targetH = 3.0;
+    c1.distFrR = 9.0;
+    c1.lensFocal = 25;
+    c1.pictureDist = "130";
+
     Conf_addEntry(&c1);
 
     struct Administration a1;
@@ -240,7 +248,7 @@ int userDB::initDB(QString &dbName)
     fp = fopen(STALKER_CONF_FILE,"r");
     if (!fp)
     {
-        fprintf(stderr, "Unable to open accsensor.conf configuration file\n");
+        fprintf(stderr, "Unable to open stalker.conf configuration file\n");
         return -1;
     }
 

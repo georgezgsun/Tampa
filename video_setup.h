@@ -20,9 +20,9 @@ public:
     void toggleValue(int, int, int f=0);
 
 private slots:
-    void on_pb_frames_clicked();
+   // void on_pb_frames_clicked();
 
-    void on_pb_resolution_clicked();
+    //void on_pb_resolution_clicked();
 
     void on_pb_images_clicked();
 
@@ -39,22 +39,25 @@ private:
     void setInittoggleValues();
     void buildHashTables();
 
-    QStringList m_framesList;
-    QStringList m_resolutionList;
+    //QStringList m_framesList;
+    //QStringList m_resolutionList;
     QStringList m_imagesList;
     QStringList m_prebufferList;
     QStringList m_postbufferList;
     SysConfig mConf;
-    int m_framesIndex;
-    int m_resolutionIndex;
+    //int m_framesIndex;
+    //int m_resolutionIndex;
     int m_imagesIndex;
     int m_prebufferIndex;
     int m_postbufferIndex;
-    int mOldFramesIndex;
-    int mOldResolutionIndex;
+    int m_pictureDist;
+
+   // int mOldFramesIndex;
+   // int mOldResolutionIndex;
     int mOldImagesIndex;
     int mOldPrebufferIndex;
     int mOldPostbufferIndex;
+    int mOldPictureDist;
 #ifdef HH1
     QStringList m_imageSpacingList;
     int m_imageSpacingIndex;

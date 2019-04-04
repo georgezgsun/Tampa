@@ -271,3 +271,13 @@ void enetSetup::on_pb_type_clicked()
         ui->le_dns2->setEnabled(true);
     }
 }
+
+void enetSetup::exeUpSelect()
+{
+    //do nothing
+}
+
+void enetSetup::exeDownSelect()
+{
+    //do nothing
+}

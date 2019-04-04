@@ -65,8 +65,6 @@ bool CCoordTransforms::Transform(coord_struct * InputCoordinates, coord_struct *
         OutputCoordinates->Y = InputCoordinates->Y;
         OutputCoordinates->Z = InputCoordinates->Z;
         OutputCoordinates->R = InputCoordinates->R;
-        OutputCoordinates->Theta_Y = InputCoordinates->Theta_Y;
-        OutputCoordinates->Theta_Z = InputCoordinates->Theta_Z;
         OutputCoordinates->Vx = InputCoordinates->Vx;
         OutputCoordinates->Vy = InputCoordinates->Vy;
         OutputCoordinates->Vz = InputCoordinates->Vz;
@@ -107,6 +105,7 @@ bool CCoordTransforms::Transform(coord_struct * InputCoordinates, coord_struct *
                 OutputCoordinates->X = Xrvh * cosf(Theta_rs) - Zrvh * sinf(Theta_rs);	// Equation (14)
                 OutputCoordinates->Y = Yrvh;						// Equation (15)
                 OutputCoordinates->Z = Xrvh * sinf(Theta_rs) + Zrvh * cosf(Theta_rs);	// Equation (16)
+                OutputCoordinates->R = Dr;
 // Should this use Vtr instead?
                 OutputCoordinates->V = sqrtf(InputCoordinates->Vx * InputCoordinates->Vx +	// Equation (32)
                     InputCoordinates->Vy * InputCoordinates->Vy);  // Report flat-plane speed ignoring height
@@ -131,10 +130,65 @@ bool CCoordTransforms::Transform(coord_struct * InputCoordinates, coord_struct *
             }
             else if(OutputCoordinates->type == video)
             {
-                coord_struct radar_c;
-                radar_c.type = radar;
-                Transform(InputCoordinates, &radar_c);
-                Transform(&radar_c, OutputCoordinates);
+
+                Xrt = InputCoordinates->X - Xs;                             // Equation (5)
+                Yrt = InputCoordinates->Y;                                  // Equation (6)
+                Zrt = InputCoordinates->Z - Zs;                             // Equation (7)
+
+                Xrh = Xrt * cosf(Theta_hs) - Yrt * sinf(Theta_hs);			// Equation (8)
+                Yrh = Xrt * sinf(Theta_hs) + Yrt * cosf(Theta_hs);			// Equation (9)
+                Zrh = Zrt;                                                  // Equation (10)
+
+                Xrvh = Xrh;                                                 // Equation (11)
+                Yrvh = Yrh * cosf(-Theta_vs) - Zrh * sinf(-Theta_vs);   	// Equation (12)
+                Zrvh = Yrh * sinf(-Theta_vs) + Zrh * cosf(-Theta_vs);  		// Equation (13)
+
+                float rX = Xrvh * cosf(Theta_rs) - Zrvh * sinf(Theta_rs);	// Equation (14)
+                float rY = Yrvh;                                            // Equation (15)
+                float rZ = Xrvh * sinf(Theta_rs) + Zrvh * cosf(Theta_rs);	// Equation (16)
+//                printf("In %s Line %d, rX = %f, rY = %f, rZ = %f\n", __FILE__, __LINE__, rX, rY, rZ);
+
+                // First map the infinity point
+                float IRxp = -2.0f * Theta_hs/FOVh;                         // Equation (34)
+                float IRzp = -2.0f * Theta_vs/FOVv;                         // Equation (35)
+
+//                printf("In %s Line %d, IRxp = %f, IRzp = %f\n", __FILE__, __LINE__, IRxp, IRzp);
+
+                OutputCoordinates->Ix = IRxp * cosf(-Theta_rs) - IRzp * sinf(-Theta_rs);	// Equation (36)
+                OutputCoordinates->Iz = IRxp * sinf(-Theta_rs) + IRzp * cosf(-Theta_rs);	// Equation (37)
+
+//                printf("In %s Line %d, Ix = %f, Iz = %f\n", __FILE__, __LINE__, OutputCoordinates->Ix, OutputCoordinates->Iz);
+
+                float Txp;
+                float Tzp;
+                if(rY > 0.0f)
+                {
+                    Txp = 2.0f * rX/(rY * FOVh);                            // Equation (38)
+                    Tzp = 2.0f * rZ/(rY * FOVv);                            // Equation (39)
+                }
+                else
+                {
+                    Txp = 1.0f;
+                    Tzp = 1.0f;
+                }
+//                printf("In %s Line %d, Txp = %f, Tzp = %f\n", __FILE__, __LINE__, Txp, Tzp);
+                OutputCoordinates->X = Txp;
+                OutputCoordinates->Y = 0.0f;			// There is no Y axis on the perspective view
+                OutputCoordinates->Z = Tzp;
+//                printf("In %s Line %d:\n", __FILE__, __LINE__);
+//                printf("X = %f\n", OutputCoordinates->X);
+//                printf("Y = %f\n", OutputCoordinates->Y);
+//                printf("Z = %f\n", OutputCoordinates->Z);
+                OutputCoordinates->R = InputCoordinates->R;					// Keep true distance
+                // Note:  Reconsider the following.  We might instead want to report the angle
+                // to the infinity point Ix, Iy?
+                OutputCoordinates->Vx = InputCoordinates->Vx;		// Video mapping does not change speeds
+                OutputCoordinates->Vy = InputCoordinates->Vy;
+                OutputCoordinates->Vz = InputCoordinates->Vz;
+                OutputCoordinates->V = InputCoordinates->V;
+                OutputCoordinates->Theta_Vy = 0.0f;			// There is no Y axis on the perspective view
+                OutputCoordinates->Theta_Vz = atan2f(OutputCoordinates->Vx, OutputCoordinates->Vz); // Is this what we want?
+
             }
             else
             {
@@ -219,13 +273,14 @@ bool CCoordTransforms::Transform(coord_struct * InputCoordinates, coord_struct *
                 OutputCoordinates->Z = Zrt + Zs;				// Equation (28)
 
                 OutputCoordinates->R = Dr * cosf(Theta_rr);  // Report roadway-plane distance ignoring height
-                OutputCoordinates->Theta_Y = atan2f(OutputCoordinates->X, OutputCoordinates->Y);
-                OutputCoordinates->Theta_Z = Theta_rr;
-                float Theta_ht = atan2(OutputCoordinates->Y, OutputCoordinates->X - Xs);	// Equation (4)
+//                float Theta_ht = atan2(OutputCoordinates->Y, OutputCoordinates->X - Xs);	// Equation (4)
+                float Theta_ht = atan2(OutputCoordinates->X - Xs, OutputCoordinates->Y);	// Equation (4)
                 float V = InputCoordinates->V / (cosf(Theta_ht) * cosf(Theta_rr));		// Equation (29)
                 OutputCoordinates->Theta_Vy = atan2(InputCoordinates->Vx, InputCoordinates->Vy) - Theta_hs;
                 OutputCoordinates->Theta_Vz = InputCoordinates->Theta_Vz + Theta_vs;
                 OutputCoordinates->V = V * cosf(OutputCoordinates->Theta_Vz);  // Report flat-plane speed ignoring height
+//                printf("Radar target speed = %f, Roadway target speed = %f, Theta_ht = %f, Theta_rr = %f, Theta_Vz = %f\n",
+//                       InputCoordinates->V, OutputCoordinates->V, Theta_ht, Theta_rr, OutputCoordinates->Theta_Vz);
                 OutputCoordinates->Vx = OutputCoordinates->V * sinf(Theta_ht);			// Equation (30)
                 OutputCoordinates->Vy = OutputCoordinates->V * cosf(Theta_ht);			// Equation (31)
                 OutputCoordinates->Vz = 0.0f;
@@ -234,52 +289,12 @@ bool CCoordTransforms::Transform(coord_struct * InputCoordinates, coord_struct *
             }
             else if(OutputCoordinates->type == video)
             {
-                // First map the infinity point
-                float IRxp = -2.0f * Theta_hs/FOVh;						// Equation (34)
-                float IRzp = -2.0f * Theta_vs/FOVv;						// Equation (35)
-
-//                printf("In %s Line %d, IRxp = %f, IRzp = %f\n", __FILE__, __LINE__, IRxp, IRzp);
-
-                OutputCoordinates->Ix = IRxp * cosf(-Theta_rs) - IRzp * sinf(-Theta_rs);	// Equation (36)
-                OutputCoordinates->Iz = IRxp * sinf(-Theta_rs) + IRzp * cosf(-Theta_rs);	// Equation (37)
-
-//                printf("In %s Line %d, Ix = %f, Iz = %f\n", __FILE__, __LINE__, OutputCoordinates->Ix, OutputCoordinates->Iz);
-
-                float Txp;
-                float Tzp;
-                if(InputCoordinates->Y > 0.0f)
-                {
-                    Txp = 2.0f * InputCoordinates->X/(InputCoordinates->Y * FOVh);		// Equation (38)
-                    Tzp = 2.0f * InputCoordinates->Z/(InputCoordinates->Y * FOVv);		// Equation (39)
-                }
-                else
-                {
-                    Txp = 1.0f;
-                    Tzp = 1.0f;
-                }
-
-//                printf("In %s Line %d, Txp = %f, Tzp = %f\n", __FILE__, __LINE__, Txp, Tzp);
-
-                OutputCoordinates->X = Txp * cosf(-Theta_rs) - Tzp * sinf(-Theta_rs);		// Equation (40)
-                OutputCoordinates->Y = 0.0f;			// There is no Y axis on the perspective view
-                OutputCoordinates->Z = Txp * sinf(-Theta_rs) + Tzp * cosf(-Theta_rs);		// Equation (41)
-//                printf("In %s Line %d:\n", __FILE__, __LINE__);
-//                printf("X = %f\n", OutputCoordinates->X);
-//                printf("Y = %f\n", OutputCoordinates->Y);
-//                printf("Z = %f\n", OutputCoordinates->Z);
-
-                OutputCoordinates->R = InputCoordinates->R;					// Keep true distance
-                OutputCoordinates->Theta_Y = 0.0f;		// There is no Y axis on the perspective view
-                // Note:  Reconsider the following.  We might instead want to report the angle
-                // to the infinity point Ix, Iy?
-                OutputCoordinates->Theta_Z = atan2f(OutputCoordinates->X, OutputCoordinates->Z);
-                OutputCoordinates->Vx = InputCoordinates->Vx;		// Video mapping does not change speeds
-                OutputCoordinates->Vy = InputCoordinates->Vy;
-                OutputCoordinates->Vz = InputCoordinates->Vz;
-                OutputCoordinates->V = InputCoordinates->V;
-                OutputCoordinates->Theta_Vy = 0.0f;			// There is no Y axis on the perspective view
-                OutputCoordinates->Theta_Vz = atan2f(OutputCoordinates->Vx, OutputCoordinates->Vz); // Is this what we want?
-
+            // Mapping directly from radar to video is incorrect since the Z components are determined in
+            // mapping from radar to roadway and not propagated back to radar
+                coord_struct roadway_c;
+                roadway_c.type = roadway;
+                Transform(InputCoordinates, &roadway_c);    // Map radar to roadway
+                Transform(&roadway_c, OutputCoordinates);   // And then map roadway to video
             }
             else
             {

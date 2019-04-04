@@ -23,9 +23,11 @@ public:
    explicit focus(QWidget *parent = 0);
    ~focus();
    QTimer *m_Timer;
+   void exeUpSelect();
+   void exeDownSelect();
 
 private slots:
-  void again();
+   void exeExitPressed();
 
 private:
    Ui::focus *ui;

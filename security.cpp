@@ -47,7 +47,7 @@ securityOptions::~securityOptions()
     {
         struct Users usr;
         userDB *userDB = u.db();
-        int ct, retv;
+        int ct, retv=0;
         ct = userDB->queryEntry(TBL_USERS, (DBStruct *)&usr, QRY_ALL_ENTRIES);
         for (int i = 0; i < ct; i++)
         {

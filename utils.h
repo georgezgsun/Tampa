@@ -14,9 +14,9 @@
 #include <sys/msg.h>
 #include <sys/shm.h>
 #include <sys/types.h>
+#include "Fuel_Gauge_Buff.h"
 #ifdef LIDARCAM
 #include "Lidar_Buff.h"
-#include "Fuel_Gauge_Buff.h"
 #endif
 #include "GPS_Buff.h"
 #ifdef HH1
@@ -86,19 +86,21 @@ public:
 
     int connectGPSMEM();
     struct GPS_Buff *GPSBuf() {return m_GPSData; }
-
-	int connectTILTMEM();
+    
+    int connectTILTMEM();
     struct Tilt_Buff *TILTBuf() { return tiltData; }
-
-	int connectMAGMEM();
+    
+    int connectMAGMEM();
     struct Mag_Buff *MAGBuf() { return magData; }
 
 	int connectRADARMEM();
     struct RadarMemory *RADARBuf() { return radarData; }
 
+    int connectFG();
+    struct Fuel_Gauge_Buff *FGBuf() {return m_FGData; }
+    void updateFG( void );
 #ifdef LIDARCAM
     struct Lidar_Buff *lidarDataBuf() {return m_lidarData; }
-    struct Fuel_Gauge_Buff *FGBuf() {return m_FGData; }
     int connectLidar();
     float lidarRange();
     float lidarSpeed();
@@ -163,7 +165,9 @@ public:
     bool mPassword;
     bool passwordEntered(void) {return mPassword;}
     void setPasswordStatus(bool newStatus) {mPassword = newStatus;}
+#ifdef LIDARCAM
     void Send_Msg_To_PIC( int cmd );
+#endif
     int getDisplayUnits( void );
 
    // Illuminator
@@ -244,10 +248,10 @@ private:
     QString mRecordingFileName;
     int mDistance;   // Vehicle distance when the photo was taken
     int mEvidenceId;
+    Fuel_Gauge_Buff *m_FGData;
 #ifdef LIDARCAM
     int m_lidarConnected;
     Lidar_Buff *m_lidarData;   
-    Fuel_Gauge_Buff *m_FGData;
 #endif
     unsigned short UART_CALCULATE_CHECKSUM(unsigned char * buffer, int size);
     bool responseF1Packet( struct Message_Queue_Buff *, int *, int *);

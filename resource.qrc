@@ -66,6 +66,7 @@
         <file alias="target-1-2">icon/hh1Graphics/Target-1-2.png</file>
     </qresource>
 	<qresource prefix="/dynamic">
+        <file alias="charging">icon/dynamic/Charging.svg</file>
         <file alias="battery-0">icon/dynamic/Battery-0.svg</file>
         <file alias="battery-1">icon/dynamic/Battery-1.svg</file>
         <file alias="battery-2">icon/dynamic/Battery-2.svg</file>

@@ -76,7 +76,10 @@ SOURCES += main.cpp\
     db/tbl_Sensor.cpp \
     tiltParams.cpp \
     hh1MetaData.cpp \
-    focus.cpp
+    focus.cpp \
+    json.cpp \
+    doTicket.cpp \
+    Gps/gps.cpp
 
 HEADERS  += \
     main_menu.h \
@@ -134,10 +137,13 @@ HEADERS  += \
     TiltSensor/smbus.h \
     TiltSensor/TiltSensor.h \
     selfTest.h \
-    tiltRarams.h \
     tiltParams.h \
     hh1MetaData.h \
-    focus.h
+    focus.h \
+    json.h \
+    doTicket.h \
+    Gps/dataType.h \
+    Gps/Gps.h
 
 FORMS    += \
     main_menu.ui \
@@ -176,9 +182,11 @@ FORMS    += \
     selfTest.ui \
     tiltParams.ui \
     radarParams.ui \
-    focus.ui
+    focus.ui \
+    printTicket.ui \
+    doTicket.ui
 
-INCLUDEPATH += ./keyboard ./widgets ./widgets/vki ./db ./radar $$PWD/../kernel/lidarcamevm/ipnc_app/interface/inc $$PWD/../common ./RadarInterface ./TiltSensor
+INCLUDEPATH += ./keyboard ./widgets ./widgets/vki ./db ./radar $$PWD/../kernel/lidarcamevm/ipnc_app/interface/inc $$PWD/../common ./RadarInterface ./TiltSensor ./Gps
 
 
 TRANSLATIONS += keyboard/translations/virtualBoard_it.ts \

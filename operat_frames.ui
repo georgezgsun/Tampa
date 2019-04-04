@@ -20,6 +20,97 @@
    <number>0</number>
   </property>
   <widget class="QWidget" name="pg_sd">
+   <property name="palette">
+    <palette>
+     <active>
+      <colorrole role="WindowText">
+       <brush brushstyle="SolidPattern">
+        <color alpha="255">
+         <red>255</red>
+         <green>255</green>
+         <blue>255</blue>
+        </color>
+       </brush>
+      </colorrole>
+      <colorrole role="Text">
+       <brush brushstyle="SolidPattern">
+        <color alpha="255">
+         <red>255</red>
+         <green>255</green>
+         <blue>255</blue>
+        </color>
+       </brush>
+      </colorrole>
+      <colorrole role="ButtonText">
+       <brush brushstyle="SolidPattern">
+        <color alpha="255">
+         <red>255</red>
+         <green>255</green>
+         <blue>255</blue>
+        </color>
+       </brush>
+      </colorrole>
+     </active>
+     <inactive>
+      <colorrole role="WindowText">
+       <brush brushstyle="SolidPattern">
+        <color alpha="255">
+         <red>255</red>
+         <green>255</green>
+         <blue>255</blue>
+        </color>
+       </brush>
+      </colorrole>
+      <colorrole role="Text">
+       <brush brushstyle="SolidPattern">
+        <color alpha="255">
+         <red>255</red>
+         <green>255</green>
+         <blue>255</blue>
+        </color>
+       </brush>
+      </colorrole>
+      <colorrole role="ButtonText">
+       <brush brushstyle="SolidPattern">
+        <color alpha="255">
+         <red>255</red>
+         <green>255</green>
+         <blue>255</blue>
+        </color>
+       </brush>
+      </colorrole>
+     </inactive>
+     <disabled>
+      <colorrole role="WindowText">
+       <brush brushstyle="SolidPattern">
+        <color alpha="255">
+         <red>190</red>
+         <green>190</green>
+         <blue>190</blue>
+        </color>
+       </brush>
+      </colorrole>
+      <colorrole role="Text">
+       <brush brushstyle="SolidPattern">
+        <color alpha="255">
+         <red>190</red>
+         <green>190</green>
+         <blue>190</blue>
+        </color>
+       </brush>
+      </colorrole>
+      <colorrole role="ButtonText">
+       <brush brushstyle="SolidPattern">
+        <color alpha="255">
+         <red>190</red>
+         <green>190</green>
+         <blue>190</blue>
+        </color>
+       </brush>
+      </colorrole>
+     </disabled>
+    </palette>
+   </property>
    <property name="styleSheet">
     <string notr="true"/>
    </property>
@@ -43,7 +134,7 @@
      <widget class="QLabel" name="lb_sd1">
       <property name="styleSheet">
        <string notr="true">image: url(:/hh1/target-1-2);
-color: rgb(255, 128, 128);</string>
+color: rgb(255, 150, 148);</string>
       </property>
       <property name="text">
        <string/>
@@ -75,9 +166,100 @@ color: rgb(255, 255, 0);</string>
     </item>
     <item>
      <widget class="QLabel" name="lb_sd3">
+      <property name="palette">
+       <palette>
+        <active>
+         <colorrole role="WindowText">
+          <brush brushstyle="SolidPattern">
+           <color alpha="255">
+            <red>216</red>
+            <green>216</green>
+            <blue>224</blue>
+           </color>
+          </brush>
+         </colorrole>
+         <colorrole role="Text">
+          <brush brushstyle="SolidPattern">
+           <color alpha="255">
+            <red>216</red>
+            <green>216</green>
+            <blue>224</blue>
+           </color>
+          </brush>
+         </colorrole>
+         <colorrole role="ButtonText">
+          <brush brushstyle="SolidPattern">
+           <color alpha="255">
+            <red>216</red>
+            <green>216</green>
+            <blue>224</blue>
+           </color>
+          </brush>
+         </colorrole>
+        </active>
+        <inactive>
+         <colorrole role="WindowText">
+          <brush brushstyle="SolidPattern">
+           <color alpha="255">
+            <red>216</red>
+            <green>216</green>
+            <blue>224</blue>
+           </color>
+          </brush>
+         </colorrole>
+         <colorrole role="Text">
+          <brush brushstyle="SolidPattern">
+           <color alpha="255">
+            <red>216</red>
+            <green>216</green>
+            <blue>224</blue>
+           </color>
+          </brush>
+         </colorrole>
+         <colorrole role="ButtonText">
+          <brush brushstyle="SolidPattern">
+           <color alpha="255">
+            <red>216</red>
+            <green>216</green>
+            <blue>224</blue>
+           </color>
+          </brush>
+         </colorrole>
+        </inactive>
+        <disabled>
+         <colorrole role="WindowText">
+          <brush brushstyle="SolidPattern">
+           <color alpha="255">
+            <red>216</red>
+            <green>216</green>
+            <blue>224</blue>
+           </color>
+          </brush>
+         </colorrole>
+         <colorrole role="Text">
+          <brush brushstyle="SolidPattern">
+           <color alpha="255">
+            <red>216</red>
+            <green>216</green>
+            <blue>224</blue>
+           </color>
+          </brush>
+         </colorrole>
+         <colorrole role="ButtonText">
+          <brush brushstyle="SolidPattern">
+           <color alpha="255">
+            <red>216</red>
+            <green>216</green>
+            <blue>224</blue>
+           </color>
+          </brush>
+         </colorrole>
+        </disabled>
+       </palette>
+      </property>
       <property name="styleSheet">
        <string notr="true">image: url(:/hh1/target-3-2);
-color: rgb(204, 102, 255);</string>
+color: rgb(216, 216, 224);</string>
       </property>
       <property name="text">
        <string/>
@@ -91,7 +273,7 @@ color: rgb(204, 102, 255);</string>
      <widget class="QLabel" name="lb_sd4">
       <property name="styleSheet">
        <string notr="true">image: url(:/hh1/target-4-2);
-color: rgb(0, 204, 255);</string>
+color: rgb(97, 213, 255);</string>
       </property>
       <property name="text">
        <string/>
@@ -123,110 +305,6 @@ color: rgb(0, 204, 255);</string>
     <property name="bottomMargin">
      <number>0</number>
     </property>
-    <item>
-     <widget class="QPushButton" name="pb_exit">
-      <property name="minimumSize">
-       <size>
-        <width>120</width>
-        <height>68</height>
-       </size>
-      </property>
-      <property name="font">
-       <font>
-        <pointsize>14</pointsize>
-        <weight>50</weight>
-        <italic>false</italic>
-        <bold>false</bold>
-       </font>
-      </property>
-      <property name="autoFillBackground">
-       <bool>false</bool>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">image: url(:/hh1/blue-button);
-background-color: rgba(255, 255, 255, 0);</string>
-      </property>
-      <property name="text">
-       <string>EXIT</string>
-      </property>
-     </widget>
-    </item>
-    <item>
-     <widget class="QPushButton" name="pb_spare1">
-      <property name="minimumSize">
-       <size>
-        <width>120</width>
-        <height>68</height>
-       </size>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">background-color: rgba(255, 255, 255, 0);</string>
-      </property>
-      <property name="text">
-       <string/>
-      </property>
-     </widget>
-    </item>
-    <item>
-     <widget class="QPushButton" name="pb_record">
-      <property name="minimumSize">
-       <size>
-        <width>120</width>
-        <height>68</height>
-       </size>
-      </property>
-      <property name="font">
-       <font>
-        <pointsize>14</pointsize>
-        <weight>50</weight>
-        <italic>false</italic>
-        <bold>false</bold>
-       </font>
-      </property>
-      <property name="autoFillBackground">
-       <bool>false</bool>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">image: url(:/hh1/record);
-background-color: rgba(255, 255, 255, 0);</string>
-      </property>
-      <property name="text">
-       <string>RECORD</string>
-      </property>
-      <property name="iconSize">
-       <size>
-        <width>32</width>
-        <height>32</height>
-       </size>
-      </property>
-     </widget>
-    </item>
-    <item>
-     <widget class="QPushButton" name="pb_selfTest">
-      <property name="minimumSize">
-       <size>
-        <width>120</width>
-        <height>68</height>
-       </size>
-      </property>
-      <property name="font">
-       <font>
-        <pointsize>14</pointsize>
-        <weight>50</weight>
-        <italic>false</italic>
-        <bold>false</bold>
-       </font>
-      </property>
-      <property name="styleSheet">
-       <string notr="true">image: url(:/hh1/blue-button);
-background-color: rgba(255, 255, 255, 0);</string>
-      </property>
-      <property name="text">
-       <string>SELF
-TEST</string>
-      </property>
-     </widget>
-    </item>
    </layout>
   </widget>
  </widget>

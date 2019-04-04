@@ -86,7 +86,7 @@
          </font>
         </property>
         <property name="text">
-         <string>SHARE</string>
+         <string>EXPORT</string>
         </property>
         <property name="flat">
          <bool>false</bool>
@@ -134,6 +134,9 @@
         <italic>false</italic>
         <bold>false</bold>
        </font>
+      </property>
+      <property name="selectionMode">
+       <enum>QAbstractItemView::ExtendedSelection</enum>
       </property>
      </widget>
     </item>

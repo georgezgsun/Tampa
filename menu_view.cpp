@@ -29,6 +29,7 @@
 #include "camera_setup.h"
 #include "dist_measure.h"
 #include "play_back.h"
+#include "ticket_view.h"
 #include "hardButtons.h"
 #include "state.h"
 #include "utils.h"
@@ -38,6 +39,7 @@
 #include "Message_Queue_Struct.h"
 #include "ColdFireMsg.h"
 #include "security.h"
+#include "printTicket.h"
 #ifndef HH1
 #include "metaData.h"
 #endif
@@ -53,6 +55,7 @@
 #include "PicMsg.h"
 #include <QNetworkAccessManager>
 #include <QNetworkRequest>
+#include "doTicket.h"
 
 menuView::menuView(widgetKeyBoard *vkb, Users *u, QWidget *parent) :
     QWidget(parent),
@@ -77,33 +80,45 @@ menuView::menuView(widgetKeyBoard *vkb, Users *u, QWidget *parent) :
   this->setMenuViewCommon();
   ((mainMenu *)m_currMenu)->setUser( m_user );
 
-#ifdef LIDARCAM
   Utils& v = Utils::get();
   //  hexDump("GPS", v.GPSBuf(), sizeof( struct GPS_Buff));
   //  hexDump("FuelGauge", v.FGBuf(), sizeof( struct Fuel_Gauge_Buff));
 
+#ifdef HH1
+  v.updateFG();
+#endif
+
   // toggle the battery
   int percent = v.FGBuf()->State_Of_Charge;
-  DEBUG() << "Battery Percent " << percent;
+  //  DEBUG() << "Battery Percent " << percent;
+#ifdef LIDARCAM
   v.Send_Msg_To_PIC( Set_Power_Led_Green );
+#endif
   if( percent > 75 ) {
-	ui->lb_battery->setPixmap(QPixmap(":/dynamic/battery-4"));
+    ui->lb_battery->setPixmap(QPixmap(":/dynamic/battery-4"));
   }else{
-	if( percent > 50 ) {
-	  ui->lb_battery->setPixmap(QPixmap(":/dynamic/battery-3"));
+    if( percent > 50 ) {
+      ui->lb_battery->setPixmap(QPixmap(":/dynamic/battery-3"));
+    }else{
+      if( percent > 25 ) {
+	ui->lb_battery->setPixmap(QPixmap(":/dynamic/battery-2"));
+      }else{
+	if( percent > 10 ) {
+	  ui->lb_battery->setPixmap(QPixmap(":/dynamic/battery-1"));
 	}else{
-	  if( percent > 25 ) {
-		ui->lb_battery->setPixmap(QPixmap(":/dynamic/battery-2"));
-	  }else{
-		if( percent > 10 ) {
-		  ui->lb_battery->setPixmap(QPixmap(":/dynamic/battery-1"));
-		}else{
-		  v.Send_Msg_To_PIC( Set_Power_Led_Red );
-		  ui->lb_battery->setPixmap(QPixmap(":/dynamic/battery-0"));
-		}
-	  }
+#ifdef LIDARCAM
+	  v.Send_Msg_To_PIC( Set_Power_Led_Red );
+#endif
+	  ui->lb_battery->setPixmap(QPixmap(":/dynamic/battery-0"));
 	}
+      }
+    }
   }
+
+  if( true == v.FGBuf()->Is_Charging ) {
+    ui->lb_battery->setPixmap(QPixmap(":/dynamic/charging"));
+  }
+
 
   // toggle the GPS connected icon
   if( v.GPSBuf()->GPS_Fixed == true ) {
@@ -111,7 +126,6 @@ menuView::menuView(widgetKeyBoard *vkb, Users *u, QWidget *parent) :
   }else{
 	ui->lb_GPS->setPixmap(QPixmap(":/dynamic/GPS-off"));
   }
-#endif
 
   // get the amount of storage being used
   QProcess process;
@@ -436,6 +450,33 @@ void menuView::exitPressed()
   return;
 }
 
+void menuView::playbackAvi()
+{
+	Utils& u = Utils::get();
+	u.sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
+
+    //DEBUG() << "playback: " << currentPlaybackFileName;
+
+    #ifdef IS_TI_ARM
+    int value = (int)currentPlaybackFileName.toLatin1().data();
+    int retv = Utils::get().sendCmdToCamera(CMD_PLAYBACK, value);
+    if(retv)
+      DEBUG() << "Error: Start Play, ret " << retv;
+    #endif
+
+    deleteAccMenu(); //will delete JPEG playback ui
+
+    m_menuStack.pop();
+
+    if ( m_menuStack.isEmpty() == true)
+    {
+        //DEBUG() << "switch to top view";
+        hardButtons::get().EnableHardButtons(false);    // Disable Hard Button
+        emit this->closeMenuView();
+    }
+}
+
+
 void menuView::openSubMenu(baseMenu *bm)
 {
     this->pushMenuStack();
@@ -447,6 +488,20 @@ void menuView::openSubMenu(baseMenu *bm)
 void menuView::setSelectButton(bool b)
 {
     ui->pb_select->setEnabled(b);
+}
+
+void menuView::gotoFileMgr()
+{
+    state& v = state::get();
+
+    Utils& u = Utils::get();
+
+	u.sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
+
+   this->stateStack.push(v.getState());
+   baseMenu *bm = NULL;
+   bm = new fileMgr;
+   openSubMenu(bm);
 }
 
 void menuView::selectPressed()
@@ -501,7 +556,11 @@ void menuView::selectPressed()
     //case CMD_CANCEL:
       //  m_prevCmd = m_command;
         //return this->m_currMenu->exeCancelClick();
-
+    case CMD_MAIN_LOGOUT:
+    DEBUG() << "press logout key";
+    tb_logout_clicked();
+    return;
+    //break;
     case CMD_MAIN_LOC_SETUP:
 	  this->stateStack.push(v.getState());
         bm = new locSetup;
@@ -514,11 +573,12 @@ void menuView::selectPressed()
     case CMD_MAIN_MODE_SEL:
 	  this->stateStack.push(v.getState());
         bm = new modeSel;
+        bm->setVKB(m_vkb);
         break;
     case CMD_MAIN_SYS_OPT:
 	  this->stateStack.push(v.getState());
         bm = new sysOpt;
-        break;
+               break;
     case CMD_MAIN_USER_MGR:
 	  this->stateStack.push(v.getState());
         bm = new userMgr( m_user, m_vkb);
@@ -526,6 +586,10 @@ void menuView::selectPressed()
     case CMD_MAIN_FILE_MGR:
 	  this->stateStack.push(v.getState());
         bm = new fileMgr;
+        break;
+    case CMD_MAIN_PRT_TICKET:
+      this->stateStack.push(v.getState());
+        bm = new printTicket;
         break;
     case CMD_MAIN_DEV_INFO:
 	  this->stateStack.push(v.getState());
@@ -545,6 +609,7 @@ void menuView::selectPressed()
     case CMD_VIDEO:
 	  this->stateStack.push(v.getState());
         bm = new videoSetup;
+        bm->setVKB(m_vkb);
         break;
     case CMD_WIFI:
 	  this->stateStack.push(v.getState());
@@ -669,6 +734,13 @@ void menuView::selectPressed()
 	  bm = new uploadMgr (0, fm->fileInfoList(), fm->currTWItem());
 	  break;
     }
+    case CMD_TICKET_UPLOAD:
+    {
+      printTicket * fm = qobject_cast<printTicket *>(m_currMenu);
+      this->stateStack.push(v.getState());
+      bm = new uploadMgr (0, fm->fileInfoList(), fm->currTWItem());
+      break;
+    }
     case CMD_LOC_LOAD:
     case CMD_LOC_SAVE:
 	  this->stateStack.push(v.getState());
@@ -701,11 +773,66 @@ void menuView::selectPressed()
 
     case CMD_PLAYBACK:
     {
-      // This assumes that fileMgr is calling this, beware if not called from file_mgr.cpp
-      fileMgr * fm = qobject_cast<fileMgr *>(m_currMenu);
+        state& mv = state::get();
+        // This assumes that fileMgr is calling this, beware if not called from file_mgr.cpp
+        fileMgr * fm = qobject_cast<fileMgr *>(m_currMenu);
+        if (fm->currTWItem() == NULL )
+        {
+           DEBUG() << "CMD_PLAYBACK no file to playback";
+           return;
+        }
+        if (m_accMenu)
+        {
+           delete m_accMenu;
+           m_accMenu = NULL;
+        }
+        this->stateStack.push(v.getState());
+        DEBUG() << fm->fileInfoList().count() << fm->currTWItem()->text();
+        for ( int i=0; i < fm->fileInfoList().count(); i++ )
+        {
+           QFileInfo fi = fm->fileInfoList().at(i);
+
+           if( fi.fileName() == fm->currTWItem()->text() )
+           {
+               Utils& u = Utils::get();
+               int retv = u.sendCmdToCamera(CMD_STOPPLAY, NULL);
+               if(retv)
+                 DEBUG() << "Error: Stop Play, ret " << retv;
+               u.sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
+
+               currentPlaybackFileName = fi.absoluteFilePath();
+               QList<QString> ext_list;
+               ext_list<<"jpg";
+               QFileInfo fi(currentPlaybackFileName);
+               QString ext = fi.suffix();
+
+               if (ext_list.contains(ext))
+               {
+                   m_accMenu = new playBack();
+                   m_accMenu->show();
+                   playBack *ptr1 = (playBack *)m_accMenu;
+                   ptr1->setFileName(currentPlaybackFileName);
+                   ptr1->startPlay();
+                   mv.setPlaybackState(0);
+               }
+               else
+               {
+                   //DEBUG() << "playback" << currentPlaybackFileName;
+                   mv.setPlaybackState(1);
+                   playbackAvi();
+               }
+               return;
+           }
+        }
+    }
+
+    case CMD_TICKET_PLAYBACK:
+    {
+
+      printTicket * fm = qobject_cast<printTicket *>(m_currMenu);
       if (fm->currTWItem() == NULL )
       {
-         DEBUG() << "CMD_PLAYBACK no file to playback";
+         DEBUG() << "CMD_TICKET_PLAYBACK no file to playback";
          return;
       }
 
@@ -723,11 +850,10 @@ void menuView::selectPressed()
          if( fi.fileName() == fm->currTWItem()->text() )
          {
              currentPlaybackFileName = fi.absoluteFilePath();
-             m_accMenu = new playBack();
+             m_accMenu = new doTicket();
              m_accMenu->show();
-             playBack *ptr1 = (playBack *)m_accMenu;
-             ptr1->setFileName(currentPlaybackFileName);
-             ptr1->startPlay();
+             doTicket *ptr1 = ( doTicket *)m_accMenu;
+             ptr1->display(currentPlaybackFileName);
              return;
          }
       }
@@ -910,6 +1036,14 @@ void menuView::selectPressed()
 #endif
          return;
       }
+    case CMD_CAMERACONFIG:
+         if (m_accMenu != NULL)
+            delete m_accMenu;
+
+         m_accMenu = new cameraSetup();
+         m_accMenu->setVKB(m_vkb);
+         m_accMenu->show();
+         return;
 
     case CMD_ILLIMINATOR:
          if (m_accMenu != NULL)
@@ -942,5 +1076,32 @@ bool menuView::eventFilter (QObject * object, QEvent *event)
 	this->mapHardButtons();
   }
   return false;
+}
+
+void menuView::tb_logout_clicked()
+{
+  Utils& u = Utils::get();
+  u.sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
+
+  QMessageBox msgBox;
+  msgBox.setText("Are you sure you want to log out?");
+  msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+  msgBox.setDefaultButton(QMessageBox::No);
+  msgBox.setIcon(QMessageBox::Question);
+  QPalette p;
+  p.setColor(QPalette::Window, Qt::red);
+  msgBox.setPalette(p);
+
+ if(msgBox.exec() == QMessageBox::Yes){
+   u.sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
+   //    DEBUG() << "Yes was clicked";
+   state& v = state::get();
+   v.setState(STATE_START);
+
+   QApplication::exit(1);
+  }else {
+   u.sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
+   //    DEBUG() << "Yes was *not* clicked";
+  }
 }
 

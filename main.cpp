@@ -12,6 +12,7 @@
 #include <unistd.h>
 #include "debug.h"
 #include "hh1MetaData.h"
+#include "Gps.h"
 
 bool backLightOn = true;
 bool coldFireSleep = false;
@@ -94,6 +95,12 @@ int main(int argc, char *argv[])
    } else {
      DEBUG() << "connect lidar failed";
    }
+#else
+   if (u.connectFG() == 0) {
+     DEBUG() << "FG linked";
+   } else {
+     DEBUG() << "connect FG failed";
+   }
 #endif
    
    if (u.connectGPSMEM() == 0) {
@@ -139,6 +146,9 @@ int main(int argc, char *argv[])
    // Init Radar communication
    bg.initRadarComm();
 #endif
+   
+   // Start the GPS thread
+   Gps::get().start();
    
    while ( true )
    {

@@ -13,25 +13,25 @@ iconFrame::iconFrame(int width, int height, int numIcons, LayoutDirection direct
     m_height = height;
     m_numIcons = numIcons;
     m_layoutDirect = direction;
-    m_hover = HOVER_NONE;
 
-    //if (m_width < (m_height * numIcons))
-    m_height = m_width * numIcons;
 
-    QString sty (QStringLiteral("background-color: rgba(255,255,255,30);"));
+    QString sty (QStringLiteral("background-color: rgba(0,0,0,255);"));
     m_iconList = this->findChildren<QLabel *>();
+
+#ifdef JUNK
     for (int i = 0; i < (m_iconList.size()); i++) {
         QLabel *lb = m_iconList.at(i);
         lb->setStyleSheet(sty);
-        lb->setFixedWidth((m_width*3)/4);
-        lb->setFixedHeight((m_width*3)/4);
+        lb->setFixedWidth(m_width);
+        lb->setFixedHeight(40);
     }
+#endif
     this->setFixedWidth(m_width);
     this->setFixedHeight(m_height);
 
     setAttribute(Qt::WA_Hover);
 
-    this->setStyleSheet(QStringLiteral("background-color: rgba(0, 0, 0, 0);"));
+    this->setStyleSheet(QStringLiteral("background-color: rgba(0, 0, 0, 255);"));
 
     //connect(this, SIGNAL(hoverEvent(HoverType)), this, SLOT(handleHover(HoverType)));
 
@@ -49,6 +49,7 @@ iconFrame::~iconFrame()
     delete ui;
 }
 
+#ifdef JUNK
 bool iconFrame::event(QEvent *e)
 {
     if (e->type() == QEvent::HoverEnter)
@@ -124,4 +125,17 @@ void iconFrame::timerHit()
     else
         //hide all icons
         hideIcons();
+}
+#endif
+void iconFrame::batterysetPixmap ( QString pix )
+{
+  ui->lb_battery->setPixmap(QPixmap( pix ));
+}
+void iconFrame::GPSsetPixmap ( QString pix )
+{
+  ui->lb_GPS->setPixmap(QPixmap( pix ));
+}
+void iconFrame::storagesetPixmap ( QString pix )
+{
+  ui->lb_storage->setPixmap(QPixmap( pix ));
 }

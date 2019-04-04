@@ -93,7 +93,8 @@ lidarSetup::~lidarSetup()
 #ifdef HH1
     if (mConf.speedTenths != mOldSpeedTenth
 	|| mConf.rangeTenths != mOldRangeTenth
-	|| mConf.autoTrigger != mOldAutoTrigger)
+    || mConf.autoTrigger != mOldAutoTrigger
+    || mConf.audioAlert != mOldAudioAlert)
         flag1 = true;
 
     if (mConf.targetSort != m_targetSortIndex)
@@ -203,11 +204,12 @@ void lidarSetup::setInittoggleValues()
     mConf = u.getConfiguration();
 
 #ifdef HH1
-    ui->cb_antiJamming->setVisible(false);
+    //ui->cb_antiJamming->setVisible(false);
 
     mOldSpeedTenth = mConf.speedTenths;
     mOldRangeTenth = mConf.rangeTenths;
     mOldAutoTrigger = mConf.autoTrigger;
+    mOldAudioAlert = mConf.audioAlert;
     if (mOldSpeedTenth)
         ui->cb_speedTenths->setCheckState(Qt::Checked);   // turn on
     else
@@ -220,6 +222,10 @@ void lidarSetup::setInittoggleValues()
         ui->cb_autoTrigger->setCheckState(Qt::Checked);
     else
         ui->cb_autoTrigger->setCheckState(Qt::Unchecked);
+    if (mOldAudioAlert)
+        ui->cb_antiJamming->setCheckState(Qt::Checked);
+    else
+        ui->cb_antiJamming->setCheckState(Qt::Unchecked);
 
     // Check Sort Target
     if (mConf.targetSort >= (unsigned int)m_targetSortList.size())
@@ -446,11 +452,19 @@ void lidarSetup::on_cb_rangeTenths_stateChanged(int arg1)
 
 void lidarSetup::on_cb_antiJamming_stateChanged(int arg1)
 {
+#ifdef HH1
+    //In hh1 anti_jamming box is used for audio alert.
+    if (arg1 == Qt::Checked)
+       mConf.audioAlert = 1;
+    else
+       mConf.audioAlert = 0;
+#else
     // Steven Cao, 11/29/2017
     if (arg1 == Qt::Checked)
        mLidar.ANTI_JAMMING = 1;
     else
        mLidar.ANTI_JAMMING = 0;
+#endif
 }
 
 void lidarSetup::on_cb_autoTrigger_stateChanged(int arg1)

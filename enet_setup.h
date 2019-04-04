@@ -18,6 +18,10 @@ public:
 
     void toggleValue(int, int, int f=0);
 
+    //reimplement virutal slots
+    void exeUpSelect();
+    void exeDownSelect();
+
 private slots:
     void on_pb_type_clicked();
 

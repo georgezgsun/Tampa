@@ -26,6 +26,7 @@ public slots:
 private slots:
 	void locSetupTimerHit();
     void on_pb_roadCondition_clicked();
+    void on_pb_lanes_clicked();
 
 protected slots:
     virtual void setCmd();
@@ -47,11 +48,13 @@ private:
 
     //values for toggle fields, some use m_onOffList
     QStringList m_envList;
+    QStringList m_laneList;
     QStringList m_spkrVolList;
     QStringList m_zoneList;
     QStringList m_backLghtList;
 
     int m_envIndex;
+    int m_laneIndex;
     int m_spkrVolIndex;
     int m_zoneIndex;
     int m_backLghtIndex;

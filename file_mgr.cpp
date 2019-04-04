@@ -12,7 +12,6 @@
 #include <QImage>
 #include <QPrintDialog>
 #include <QFontDatabase>
-#include "printTicket.h"
 
 fileMgr::fileMgr(QWidget *parent) :
     baseMenu(parent),
@@ -65,7 +64,6 @@ void fileMgr::initLists()
   //  DEBUG();
   m_list << ui->pb_playback
          << ui->pb_upload
-         << ui->pb_print
          << ui->tw_files
          << ui->pb_delete
          << ui->pb_selNew
@@ -73,13 +71,13 @@ void fileMgr::initLists()
   
   m_cmdList << CMD_PLAYBACK
             << CMD_UPLOAD
-            << CMD_PRINT
             << CMD_LIST_FILES
             << CMD_DEL_FILE
             << CMD_SEL_NEW
             << CMD_SEL_ALL;
   
    connectWidgetSigs();
+   ui->pb_print->setVisible(false);
 }
 
 void fileMgr::setInittoggleValues()
@@ -130,7 +128,7 @@ void fileMgr::setVideoPath(void)
 void fileMgr::loadVideoFiles()
 {    
     QStringList m_defaultNameFilter;
-    m_defaultNameFilter << "*.avi" << "*.jpg";
+    m_defaultNameFilter << "*.avi" << "*.jpg"<<"*.psev"<<"*.json"<<"*.md";
 
     m_videoDir.setNameFilters(m_defaultNameFilter);
 
@@ -190,17 +188,17 @@ void fileMgr::loadVideoFiles()
                tmpFIL.append(fi);
         }
 
-	//        QListWidgetItem *item = new QListWidgetItem(QListWidgetItem::Type);
+	// QListWidgetItem *item = new QListWidgetItem(QListWidgetItem::Type);
         QListWidgetItem *item = new QListWidgetItem();
         item->setText( fi.fileName());
-//        QDateTime dt = fi.lastModified();
-//        item->setText(1, dt.toString("dd MMM yyyy hh:mm:ss"));
+	// QDateTime dt = fi.lastModified();
+	// item->setText(1, dt.toString("dd MMM yyyy hh:mm:ss"));
         m_listItemList.append(item);
         ui->tw_files->addItem(item);
     }
 
-	this->enableButtons(true);
-	this->m_twFocused = true;
+    this->enableButtons(true);
+    this->m_twFocused = true;
 }
 
 void fileMgr::enableButtons(bool b)
@@ -274,13 +272,17 @@ void fileMgr::setCmd()
 	  Utils& u = Utils::get();
 	  u.sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
 	  m_fmState = FM_SELECT_ALL;
+          ui->tw_files->clearSelection();
 	  this->loadVideoFiles();
+          ui->tw_files->selectAll();
     } else if (o->objectName() == ui->pb_selNew->objectName()) {
 	  Utils& u = Utils::get();
 	  u.sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
 	  m_fmState = FM_SELECT_NEW;
 	  this->loadVideoFiles();
-    } else if(o->objectName() == ui->pb_print->objectName()) {
+    }
+#ifdef JUNK
+    else if(o->objectName() == ui->pb_print->objectName()) {
       Utils& u = Utils::get();
       u.sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
 
@@ -307,7 +309,7 @@ void fileMgr::setCmd()
       
       DEBUG() << ticketFileName;
 
-      printTicket::get().print(ticketFileName);
+     printTicket::get().print(ticketFileName);
       
       // clear the picked file from the screen
       m_currTWItem = NULL;
@@ -317,6 +319,7 @@ void fileMgr::setCmd()
       return;
 
     }
+#endif
     else if (o->objectName() == ui->pb_delete->objectName())
     { // Delete
       Utils& u = Utils::get();
@@ -324,7 +327,7 @@ void fileMgr::setCmd()
       if (m_FIList.count() == 0)
          return;
 
-      if (m_currTWItem)
+      if (ui->tw_files->selectedItems().count() == 1) //m_currTWItem)
       {
          //delet a file
          QString fileName = m_currTWItem->text();
@@ -369,6 +372,9 @@ void fileMgr::setCmd()
                QString json1 = pieces.value(0);
                json1 += ".json";
                m_videoDir.remove(json1);
+               QString mdFile = pieces.value(0);
+               mdFile += ".md";
+               m_videoDir.remove(mdFile);
             }
             loadVideoFiles();
          }
@@ -395,10 +401,10 @@ void fileMgr::setCmd()
 			
          if(msgBox.exec() == QMessageBox::No)
          {
-			  //qDebug() << "No was clicked";
+	   //qDebug() << "No was clicked";
            enableButtons(true);
-			  return;
-			}
+	   return;
+	 }
 
          for (int i = 0; i < count; i++)
          {
@@ -419,13 +425,17 @@ void fileMgr::setCmd()
             }
             else
             {
-               QStringList pieces = fName.split(".");
-               if (pieces.length() >= 1)
-               {
-                  QString json1 = pieces.value(0);
-                  json1 += ".json";
-                  m_videoDir.remove(json1);
-               }
+	      // delete the json and md file
+	      QStringList pieces = fName.split(".");
+	      if (pieces.length() >= 1)
+	      {
+		QString json1 = pieces.value(0);
+		json1 += ".json";
+		m_videoDir.remove(json1);
+		QString mdFile = pieces.value(0);
+		mdFile += ".md";
+		m_videoDir.remove(mdFile);
+	      }
             }
          }
          loadVideoFiles();
@@ -559,28 +569,7 @@ void fileMgr::uploadUSB()
 
 void fileMgr::on_pb_print_clicked()
 {
-   Utils& u = Utils::get();
-#ifdef LIDARCAM
-   static bool first = true;
+   // Utils& u = Utils::get();
 
-   if (first == true)
-   {
-//      u.sendCmdToCamera(CMD_SNAPSHOT, (int)"/mnt/mmc/ipnc/jsmith/180508_001556_LI001005_00001.jpg");
-      u.sendCmdToCamera(CMD_DISPLAY_WATERMARK, (int)"This is Stevens Unit.");
-//      u.sendCmdToCamera(CMD_TIMESTAMP, 1);
-//      u.sendCmdToCamera(CMD_RUN_FOCUS, 0);
-      first = false;
-   }
-   else
-   {
-//      u.sendCmdToCamera(CMD_SNAPSHOT, (int)"/mnt/mmc/ipnc/jsmith/180508_001556_LI001005_00002.jpg");
-//      u.sendCmdToCamera(CMD_REMOVE_WATERMARK, 0);
-      u.sendCmdToCamera(CMD_DISPLAY_WATERMARK, (int)"This is Steven Unit 2nd display");
-//      u.sendCmdToCamera(CMD_TIMESTAMP, 0);
-//      u.sendCmdToCamera(CMD_RUN_FOCUS, 0);
-      first = true;
-   }
-#else
-   u.getDisplayUnits();
-#endif
+   //  u.getDisplayUnits();
 }

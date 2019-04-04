@@ -7,6 +7,8 @@
 #include "debug.h"
 #include "utils.h"
 #include "Lidar_Buff.h"
+#include "hh1MetaData.h"
+//#include "RadarInterface/CoordTransforms.h"
 #include "back_ground.h"
 
 
@@ -140,31 +142,123 @@ void backGround::Create_Evidence_JSON(QString *pFile)
    json_writer << "    \"timestamp-local\": 0,\n";
    json_writer << "    \"timestamp-utc\": 0,\n";
 
-   json_writer << dNumber( "timeMillieSecs", violation.timeMillieSecs);
-   json_writer << dNumber( "theta_ref_vs", violation.theta_vs_ref);
-   json_writer << dNumber( "theta_ref_rs", violation.theta_rs_ref);
-   json_writer << dNumber( "theta_ref_hs", violation.theta_hs_ref);
-   json_writer << dNumber( "theta_vs", violation.theta_vs);
-   json_writer << dNumber( "theta_rs", violation.theta_rs);
-   json_writer << dNumber( "theta_hs", violation.theta_hs);
+   json_writer << dNumber( "timeMillieSecs", mViolation.timeMillieSecs);
 
-   json_writer << dNumber( "numTargets", violation.Targets.numTargets);
+   // radar config information
+   json_writer << dNumber( "Xs", mViolation.Xs);
+   json_writer << dNumber( "Zs", mViolation.Zs);
+   json_writer << dNumber( "Zt", mViolation.Zt);
+   json_writer << dNumber( "FocalLength", mViolation.FocalLength);
+
+   // processed accelerometer and magneticometer
+   json_writer << dNumber( "theta_ref_vs", mViolation.theta_vs_ref);
+   json_writer << dNumber( "theta_ref_rs", mViolation.theta_rs_ref);
+   json_writer << dNumber( "theta_ref_hs", mViolation.theta_hs_ref);
+   json_writer << dNumber( "theta_vs", mViolation.theta_vs);
+   json_writer << dNumber( "theta_rs", mViolation.theta_rs);
+   json_writer << dNumber( "theta_hs", mViolation.theta_hs);
+
+   // Raw radar data
+   json_writer << "\n" << dNumber( "numTargets", mViolation.Targets.numTargets);
 
    int i;
-   DEBUG() << MAX_TARGETS << " "  << violation.Targets.maxTargets << " " << violation.Targets.numTargets;
-   
-   for( i=0; i<violation.Targets.numTargets; i++ ) {
-     QString num("_");
-     num.append(QString::number(i));
-     json_writer << dNumber( QString("targetId").append(num), violation.Targets.RadarTargets[i].targetId);
-     json_writer << dNumber( QString("xCoord").append(num), violation.Targets.RadarTargets[i].xCoord);
-     json_writer << dNumber( QString("yCoord").append(num), violation.Targets.RadarTargets[i].yCoord);
-     json_writer << dNumber( QString("zCoord").append(num), violation.Targets.RadarTargets[i].zCoord);
-     json_writer << dNumber( QString("xVelocity").append(num), violation.Targets.RadarTargets[i].xVelocity);
-     json_writer << dNumber( QString("yVelocity").append(num), violation.Targets.RadarTargets[i].yVelocity);
-     json_writer << dNumber( QString("zVelocity").append(num), violation.Targets.RadarTargets[i].zVelocity);
-     json_writer << dNumber( QString("tLane").append(num), violation.Targets.RadarTargets[i].tLane);
-     json_writer << dNumber( QString("tClass").append(num), violation.Targets.RadarTargets[i].tClass);
+   DEBUG() << MAX_TARGETS << " "  << mViolation.Targets.maxTargets << " " << mViolation.Targets.numTargets;
+
+   // Open MD file to find the fastest speed for all targets
+   QString mdPath = *pFile + ".md";
+   QFile mdFile(mdPath);
+   bool mdStatus = true;
+   float topSpeed[NUM_TARGETS_SHOWN];
+   RadarTargetResponse_t topSpeedPara[NUM_TARGETS_SHOWN];
+
+   if (!mdFile.open(QIODevice::ReadOnly | QFile::Truncate))
+   {
+      DEBUG() << "Failed to open metat data file " << mdPath;
+      mdStatus = false;
+   }
+   else
+   {
+      char data1[sizeof(struct metaDataGet)];
+      UINT32	j, tId;
+      coord_struct Radar_Coords;
+      coord_struct Roadway_Coords;
+      for (i = 0; i < mViolation.Targets.numTargets; i++)
+         topSpeed[i] = 0;
+
+      CCoordTransforms Transforms;
+      config_type RadarConfig;
+
+      memset((void *)&RadarConfig, 0, sizeof(config_type));
+
+      RadarConfig.radar_data_is_roadway = false;
+      RadarConfig.Xs = -2.0f;
+      RadarConfig.Zs = 3.0f;
+      RadarConfig.FocalLength = 35.0f;
+      RadarConfig.SensorWidth = 6.2f;   // IMX 172, pixel size = 1.55 u x 4000 pixels
+      RadarConfig.SensorHeight = 4.65f; // IMX 172, pixel size = 1.55 u x 3000 pixels
+      RadarConfig.FOVh = RadarConfig.SensorWidth/RadarConfig.FocalLength * 180.0/PI;  //(10.15 degrees)
+      RadarConfig.FOVv = RadarConfig.SensorHeight/RadarConfig.FocalLength * 180.0/PI; //(7.61 degrees)
+      RadarConfig.port = serial;
+      RadarConfig.num_to_show = NUM_TARGETS_SHOWN;
+
+      // Init the coordinate transformations
+      Transforms.InitCoordTransforms(RadarConfig.Xs,
+                 RadarConfig.Zs,
+                 RadarConfig.Zt,
+                 RadarConfig.FOVh * PI/180.0f,      // Convert to radians
+                 RadarConfig.FOVv * PI/180.0f);     // Convert to radians
+
+      for (i = 0; i < (FRAMESPERSECOND * MAX_RECORDING_SECS); i++)
+      {
+         mdFile.read((char *)data1, sizeof(struct metaDataGet)); // Read one record of 1012 bytes
+
+         struct metaDataGet *ptr = (struct metaDataGet *)data1;
+         for(j = 0; j < mViolation.Targets.numTargets; j++)
+         {
+            tId = mViolation.Targets.RadarTargets[j].targetId;
+            RadarTargetResponse_t *pTarget = &(ptr->target.RadarTargets[j]);
+            if (tId != pTarget->targetId)
+               continue;   // not this target
+
+            // Here we found the correct target
+            memset( &Radar_Coords, 0, sizeof(coord_struct));
+//            memset( &Video_Coords, 0, sizeof(coord_struct));
+            memset( &Roadway_Coords, 0, sizeof(coord_struct));
+
+            Radar_Coords.type = radar;
+            Radar_Coords.X = pTarget->xCoord;
+            Radar_Coords.Y = pTarget->yCoord;
+            // Since the 3D radar does not measure target height (Z axis), fake it
+            Radar_Coords.Z = 1.0f - 3.0f;  // Usually negative
+
+            Radar_Coords.R =  sqrtf(pTarget->xCoord * pTarget->xCoord +
+                              pTarget->yCoord * pTarget->yCoord +
+                              pTarget->zCoord * pTarget->zCoord);
+
+            Radar_Coords.Vx = pTarget->xVelocity;
+            Radar_Coords.Vy = pTarget->yVelocity;
+            Radar_Coords.Vz = pTarget->zVelocity;
+
+            Radar_Coords.V =  sqrtf(pTarget->xVelocity * pTarget->xVelocity +
+                              pTarget->yVelocity * pTarget->yVelocity +
+                              pTarget->zVelocity * pTarget->zVelocity);
+
+            Radar_Coords.Theta_Vy = 0.0f;
+            Radar_Coords.Theta_Vz = 0.0f;
+            Radar_Coords.Ix = 0.0f;
+            Radar_Coords.Iz = 0.0f;
+
+            Roadway_Coords.type = roadway;
+
+            Transforms.Transform(&Radar_Coords, &Roadway_Coords);
+            if (Roadway_Coords.V > topSpeed[j])
+            {
+               topSpeed[j] = Roadway_Coords.V;
+               memcpy((void *)&(topSpeedPara[j]), (const void *)pTarget, sizeof(RadarTargetResponse_t));
+            }
+         }
+       }
+      mdFile.close();
    }
 
 #ifdef LIDARCAM
@@ -175,6 +269,38 @@ void backGround::Create_Evidence_JSON(QString *pFile)
    SysConfig mConf = u.getConfiguration();
    int units = mConf.units;
 #endif
+
+   for( i=0; i<mViolation.Targets.numTargets; i++ )
+   {
+     QString num("_");
+     num.append(QString::number(i));
+     json_writer << dNumber( QString("targetId").append(num), mViolation.Targets.RadarTargets[i].targetId);
+     json_writer << dNumber( QString("xCoord").append(num), mViolation.Targets.RadarTargets[i].xCoord);
+     json_writer << dNumber( QString("yCoord").append(num), mViolation.Targets.RadarTargets[i].yCoord);
+     json_writer << dNumber( QString("zCoord").append(num), mViolation.Targets.RadarTargets[i].zCoord);
+     json_writer << dNumber( QString("xVelocity").append(num), mViolation.Targets.RadarTargets[i].xVelocity);
+     json_writer << dNumber( QString("yVelocity").append(num), mViolation.Targets.RadarTargets[i].yVelocity);
+     json_writer << dNumber( QString("zVelocity").append(num), mViolation.Targets.RadarTargets[i].zVelocity);
+     json_writer << dNumber( QString("tLane").append(num), mViolation.Targets.RadarTargets[i].tLane);
+     json_writer << dNumber( QString("tClass").append(num), mViolation.Targets.RadarTargets[i].tClass);
+
+     // Process fastest speed for this target
+      if (mdStatus)
+      {
+         float speed1 = topSpeed[i];
+
+         if (!units)
+            speed1 /= 1.60934;   // Convert to Mile
+         json_writer << dNumber( QString("topSpeed").append(num), speed1);
+         json_writer << dNumber( QString("topXcoord").append(num), topSpeedPara[i].xCoord);
+         json_writer << dNumber( QString("topYcoord").append(num), topSpeedPara[i].yCoord);
+         json_writer << dNumber( QString("topZcoord").append(num), topSpeedPara[i].zCoord);
+         json_writer << dNumber( QString("topXvelocity").append(num), topSpeedPara[i].xVelocity);
+         json_writer << dNumber( QString("topYvelocity").append(num), topSpeedPara[i].yVelocity);
+         json_writer << dNumber( QString("topZvelocity").append(num), topSpeedPara[i].zVelocity);
+      }
+   }
+
    json_writer << "    \"units\": {\n";
    if (units == 1)
    {
@@ -284,7 +410,7 @@ int backGround::initRadarComm()
     radarData->Data.RadarOrientation.elevationAngle = 0.0f;
     radarData->Data.RadarOrientation.rollAngle = 0.0f;
     radarData->Data.RadarOrientation.radarHeight = mConfig.Zs;
-    radarData->Data.RadarOrientation.targetHeight = 1.0f;
+    radarData->Data.RadarOrientation.targetHeight = mConfig.Zt;
 
     int err = pthread_create(&(radarThreadId), NULL, &RunRadarData, (void *)&mRadarDataArgs);
     DEBUG() << "Created radar communication thread return " << err;
@@ -294,6 +420,7 @@ int backGround::initRadarComm()
       return 0;
     }
 
+    sleep(1);
     while((!mRadarData.portIsOpen) || (mRadarData.messageState != idle));
 //    printf("Radar Data state machine is idle in initRadarComm()\n");
     mRadarData.Message1(&radarData->Data.CalibrationParameters); // Get calibration parameters
@@ -327,20 +454,26 @@ void* RunRadarData(void* radarDataArgs)
     return NULL;
 }
 #endif
+
 void backGround::saveViolation(  int timeMillieSecs,
 				 float theta_vs_ref, float theta_rs_ref, float theta_hs_ref, // base from the start
 				 float theta_vs,     float theta_rs,     float theta_hs,     // current values
+				 float Xs, float Zs, float Zt, float FocalLength,
 				 Targets_t *Targets )             // Radar data
 
  {
-   violation.timeMillieSecs = timeMillieSecs;
-   violation.theta_vs_ref = theta_vs_ref;
-   violation.theta_rs_ref = theta_rs_ref;
-   violation.theta_hs_ref = theta_hs_ref;
-   violation.theta_vs = theta_vs;
-   violation.theta_rs = theta_rs;
-   violation.theta_hs = theta_hs;
-   memcpy( (void *)&violation.Targets, (void *)Targets, sizeof(Targets_t) ); 
+   mViolation.timeMillieSecs = timeMillieSecs;
+   mViolation.theta_vs_ref = theta_vs_ref;
+   mViolation.theta_rs_ref = theta_rs_ref;
+   mViolation.theta_hs_ref = theta_hs_ref;
+   mViolation.theta_vs = theta_vs;
+   mViolation.theta_rs = theta_rs;
+   mViolation.theta_hs = theta_hs;
+   mViolation.Xs = Xs;
+   mViolation.Zs = Zs;
+   mViolation.Zt = Zt;
+   mViolation.FocalLength = FocalLength;
+   memcpy( (void *)&mViolation.Targets, (void *)Targets, sizeof(Targets_t) );
 
    return;
  }

@@ -9,6 +9,7 @@ int userDB::Conf_createTbl()
         "SpeedTenths NUMERIC, "
         "RangeTenths NUMERIC, "
         "AutoTrigger NUMERIC, "
+        "AudioAlert NUMERIC, "
         "TargetSort NUMERIC, "
         "Units NUMERIC, "
         "Direction NUMERIC, "
@@ -17,16 +18,21 @@ int userDB::Conf_createTbl()
         "RadarPower NUMERIC, "
         "Sensitivity NUMERIC, "
         "Volume NUMERIC, "
+        "Brightness NUMERIC, "
         "ImageSpacing NUMERIC, "
         "SerialNumber TEXT NOT NULL, "
 #endif
         "BacklighOff NUMERIC, "
         "PowerOff NUMERIC, "
-        "Frames NUMERIC, "
+        "PictureDist TEXT NOT NULL, "
         "Resolution NUMERIC, "
         "ImagesPerFile NUMERIC, "
         "PreBuf NUMERIC, "
-        "PostBuf NUMERIC)";
+        "PostBuf NUMERIC,"
+        "RadarH REAL,"
+        "DistFrR REAL,"
+        "TargetH REAL,"
+        "LensFocal NUMERIC)";
 
     QSqlQuery query(m_db);
     if (!query.exec(str1))
@@ -43,10 +49,10 @@ int userDB::Conf_addEntry(SysConfig *l)
 {
     m_query->prepare("INSERT INTO Configuration "
 #ifdef HH1
-        "(ConfIndex,  SpeedTenths,  RangeTenths,  AutoTrigger,  TargetSort,  Units,  Direction,  Frequency,  Bandwidth,  RadarPower,  Sensitivity, Volume, \
-          ImageSpacing, SerialNumber, BacklighOff,  PowerOff,  Frames,  Resolution,  ImagesPerFile,  PreBuf,  PostBuf) "
-         "VALUES (:ConfIndex, :SpeedTenths, :RangeTenths, :AutoTrigger, :TargetSort, :Units, :Direction, :Frequency, :Bandwidth, :RadarPower, :Sensitivity, :Volume, \
-                  :imageSpacing, :SerialNumber, :BacklighOff, :PowerOff, :Frames, :Resolution, :ImagesPerFile, :PreBuf, :PostBuf)");
+        "(ConfIndex,  SpeedTenths,  RangeTenths,  AutoTrigger,  AudioAlert, TargetSort,  Units,  Direction,  Frequency,  Bandwidth,  RadarPower,  Sensitivity, Volume, \
+          ImageSpacing, SerialNumber, BacklighOff,  PowerOff,  PictureDist,  Resolution,  ImagesPerFile,  PreBuf,  PostBuf, Brightness,RadarH, DistFrR, TargetH, LensFocal) "
+         "VALUES (:ConfIndex, :SpeedTenths, :RangeTenths, :AutoTrigger, :AudioAlert, :TargetSort, :Units, :Direction, :Frequency, :Bandwidth, :RadarPower, :Sensitivity, :Volume, \
+                  :imageSpacing, :SerialNumber, :BacklighOff, :PowerOff, :PictureDist, :Resolution, :ImagesPerFile, :PreBuf, :PostBuf, :Brightness, :RadarH, :DistFrR, :TargetH, :LensFocal)");
 #else
     "(ConfIndex,  BacklighOff,  PowerOff,  Frames,  Resolution,  ImagesPerFile,  PreBuf,  PostBuf) "
       "VALUES (:ConfIndex, :BacklighOff, :PowerOff, :Frames, :Resolution, :ImagesPerFile, :PreBuf, :PostBuf)");
@@ -57,6 +63,7 @@ int userDB::Conf_addEntry(SysConfig *l)
     m_query->bindValue(":SpeedTenths", l->speedTenths);
     m_query->bindValue(":RangeTenths", l->rangeTenths);
     m_query->bindValue(":AutoTrigger", l->autoTrigger);
+    m_query->bindValue(":AudioAlert", l->audioAlert);
     m_query->bindValue(":TargetSort", l->targetSort);
     m_query->bindValue(":Units", l->units);
     m_query->bindValue(":Direction", l->direction);
@@ -65,17 +72,21 @@ int userDB::Conf_addEntry(SysConfig *l)
     m_query->bindValue(":RadarPower", l->radarPower);
     m_query->bindValue(":Sensitivity", l->sensitivity);
     m_query->bindValue(":Volume", l->volume);
+    m_query->bindValue(":Brightness", l->brightness);
     m_query->bindValue(":ImageSpacing", l->imageSpacing);
     m_query->bindValue(":SerialNumber", l->serialNumber);
 #endif
     m_query->bindValue(":BacklighOff", l->backlightOff);
     m_query->bindValue(":PowerOff", l->powerOff);
-    m_query->bindValue(":Frames", l->frames);
+    m_query->bindValue(":PictureDist", l->pictureDist);
     m_query->bindValue(":Resolution", l->resolution);
     m_query->bindValue(":ImagesPerFile", l->imagesPerFile);
     m_query->bindValue(":PreBuf", l->preBuf);
     m_query->bindValue(":PostBuf", l->postBuf);
-
+    m_query->bindValue(":RadarH", l->radarH);
+    m_query->bindValue(":DistFrR", l->distFrR);
+    m_query->bindValue(":TargetH", l->targetH);
+    m_query->bindValue(":LensFocal", l->lensFocal);
     if (!m_query->exec())
     {
         qDebug() << m_query->lastError();
@@ -110,7 +121,7 @@ int userDB::Conf_delEntry(SysConfig *l, DB_QUERY_FLAG flag)
 #define CONFIGURATION_INDEX          0x00001
 #define CONFIGURATION_BACKLIGHTOFF   0x00002
 #define CONFIGURATION_POWEROFF       0x00004
-#define CONFIGURATION_FRAMES         0x00008
+#define CONFIGURATION_PICTUREDIST    0x00008
 #define CONFIGURATION_RESOLUTION     0x00010
 #define CONFIGURATION_IMAGESPERFILE  0x00020
 #define CONFIGURATION_PREBUF         0x00040
@@ -129,6 +140,13 @@ int userDB::Conf_delEntry(SysConfig *l, DB_QUERY_FLAG flag)
 #define CONFIGURATION_SENSITIVITY    0x40000
 #define CONFIGURATION_SERIALNUMBER   0x80000
 #define CONFIGURATION_VOLUME        0x100000
+#define CONFIGURATION_BRIGHTNESS    0x200000
+#define CONFIGURATION_AUDIOALERT    0x400000
+#define CONFIGURATION_RADARH        0x800000
+#define CONFIGURATION_DISTFRR      0x1000000
+#define CONFIGURATION_TARGETH      0x2000000
+#define CONFIGURATION_LENSFOCAL    0x4000000
+
 #endif
 
 int userDB::Conf_query(SysConfig *l, DB_QUERY_FLAG flag)
@@ -175,6 +193,14 @@ int userDB::Conf_query(SysConfig *l, DB_QUERY_FLAG flag)
                 else
                     s = s + " AutoTrigger = (:AutoTrigger)";
                 fields |= CONFIGURATION_AUTOTRIGGER;
+            }
+            if (l->audioAlert > 0)
+            {
+                if (fields)
+                    s = s + " AND AudioAlert = (:AudioAlert)";
+                else
+                    s = s + " AudioAlert = (:AudioAlert)";
+                fields |= CONFIGURATION_AUDIOALERT;
             }
             if (l->targetSort > 0)
             {
@@ -240,6 +266,14 @@ int userDB::Conf_query(SysConfig *l, DB_QUERY_FLAG flag)
                     s = s + " Volume = (:Volume)";
                 fields |= CONFIGURATION_VOLUME;
             }
+            if (l->brightness > 0)
+            {
+                if (fields)
+                    s = s + " AND Brightness = (:Brightness)";
+                else
+                    s = s + " Brightness = (:Brightness)";
+                fields |= CONFIGURATION_BRIGHTNESS;
+            }
             if (l->sensitivity > 0)
             {
                 if (fields)
@@ -273,13 +307,13 @@ int userDB::Conf_query(SysConfig *l, DB_QUERY_FLAG flag)
                     s = s + " PowerOff = (:PowerOff)";
                 fields |= CONFIGURATION_POWEROFF;
             }
-            if (l->frames > 0)
+            if (l->pictureDist > 0)
             {
                 if (fields)
-                    s = s + " AND Frames = (:Frames)";
+                    s = s + " AND PictureDist = (:PictureDist)";
                 else
-                    s = s + " Frames = (:Frames)";
-                fields |= CONFIGURATION_FRAMES;
+                    s = s + " PictureDist = (:PictureDist)";
+                fields |= CONFIGURATION_PICTUREDIST;
             }
             if (l->resolution > 0)
             {
@@ -313,6 +347,38 @@ int userDB::Conf_query(SysConfig *l, DB_QUERY_FLAG flag)
                     s = s + " PostBuf = (:PostBuf)";
                 fields |= CONFIGURATION_POSTBUF;
             }
+            if (l->radarH > 0)
+            {
+                if (fields)
+                    s = s + " AND RadarH = (:RadarH)";
+                else
+                    s = s + " RadarH = (:RadarH)";
+                fields |= CONFIGURATION_RADARH;
+            }
+            if (l->distFrR > 0)
+            {
+                if (fields)
+                    s = s + " AND DistFrR = (:DistFrR )";
+                else
+                    s = s + " DistFrR  = (:DistFrR )";
+                fields |= CONFIGURATION_DISTFRR;
+            }
+            if (l->targetH > 0)
+            {
+                if (fields)
+                    s = s + " AND TargetH = (:TargetH)";
+                else
+                    s = s + " TargetH = (:TargetH)";
+                fields |= CONFIGURATION_TARGETH;
+            }
+            if (l->lensFocal > 0)
+            {
+                if (fields)
+                    s = s + " AND LensFocal = (:LensFocal)";
+                else
+                    s = s + " LensFocal = (:LensFocal)";
+                fields |= CONFIGURATION_LENSFOCAL;
+            }
         }
         else
         {      //ERROR
@@ -332,6 +398,8 @@ int userDB::Conf_query(SysConfig *l, DB_QUERY_FLAG flag)
             m_query->bindValue(":RangeTenths", l->rangeTenths);
         if (fields & CONFIGURATION_AUTOTRIGGER)
             m_query->bindValue(":AutoTrigger", l->autoTrigger);
+        if (fields & CONFIGURATION_AUDIOALERT)
+            m_query->bindValue(":AudioAlert", l->audioAlert);
         if (fields & CONFIGURATION_TARGETSORT)
             m_query->bindValue(":TargetSort", l->targetSort);
         if (fields & CONFIGURATION_UNITS)
@@ -350,6 +418,8 @@ int userDB::Conf_query(SysConfig *l, DB_QUERY_FLAG flag)
             m_query->bindValue(":Sensitivity", l->sensitivity);
         if (fields & CONFIGURATION_VOLUME)
             m_query->bindValue(":Volume", l->volume);
+        if (fields & CONFIGURATION_BRIGHTNESS)
+            m_query->bindValue(":Brightness", l->brightness);
         if (fields & CONFIGURATION_SERIALNUMBER)
             m_query->bindValue(":SerialNumber", l->serialNumber);
 #endif
@@ -357,8 +427,8 @@ int userDB::Conf_query(SysConfig *l, DB_QUERY_FLAG flag)
             m_query->bindValue(":BacklighOff", l->backlightOff);
         if (fields & CONFIGURATION_POWEROFF)
             m_query->bindValue(":PowerOff", l->powerOff);
-        if (fields & CONFIGURATION_FRAMES)
-            m_query->bindValue(":Frames", l->frames);
+        if (fields & CONFIGURATION_PICTUREDIST)
+            m_query->bindValue(":PictureDist", l->pictureDist);
         if (fields & CONFIGURATION_RESOLUTION)
             m_query->bindValue(":Resolution", l->resolution);
         if (fields & CONFIGURATION_IMAGESPERFILE)
@@ -367,6 +437,14 @@ int userDB::Conf_query(SysConfig *l, DB_QUERY_FLAG flag)
             m_query->bindValue(":PreBuf", l->preBuf);
         if (fields & CONFIGURATION_POSTBUF)
             m_query->bindValue(":PostBuf", l->postBuf);
+        if (fields & CONFIGURATION_RADARH)
+            m_query->bindValue(":RadarH", l->radarH);
+        if (fields & CONFIGURATION_DISTFRR)
+            m_query->bindValue(":DistFrR", l->distFrR);
+        if (fields & CONFIGURATION_TARGETH)
+            m_query->bindValue(":TargetH", l->targetH);
+        if (fields & CONFIGURATION_LENSFOCAL)
+            m_query->bindValue(":LensFocal", l->lensFocal);
     }
 
     if (!m_query->exec())
@@ -414,6 +492,7 @@ int userDB::Conf_getNextEntry(SysConfig *l)
         l->speedTenths = m_query->value(m_query->record().indexOf("SpeedTenths")).toUInt();
         l->rangeTenths = m_query->value(m_query->record().indexOf("RangeTenths")).toUInt();
         l->autoTrigger = m_query->value(m_query->record().indexOf("AutoTrigger")).toUInt();
+        l->audioAlert = m_query->value(m_query->record().indexOf("AudioAlert")).toUInt();
         l->targetSort = m_query->value(m_query->record().indexOf("TargetSort")).toUInt();
         l->units = m_query->value(m_query->record().indexOf("Units")).toUInt();
         l->direction = m_query->value(m_query->record().indexOf("Direction")).toUInt();
@@ -423,15 +502,20 @@ int userDB::Conf_getNextEntry(SysConfig *l)
         l->radarPower = m_query->value(m_query->record().indexOf("RadarPower")).toUInt();
         l->sensitivity = m_query->value(m_query->record().indexOf("Sensitivity")).toUInt();
         l->volume = m_query->value(m_query->record().indexOf("Volume")).toUInt();
+        l->brightness = m_query->value(m_query->record().indexOf("Brightness")).toUInt();
         l->serialNumber = m_query->value(m_query->record().indexOf("SerialNumber")).toString();
 #endif
         l->backlightOff = m_query->value(m_query->record().indexOf("BacklighOff")).toUInt();
         l->powerOff = m_query->value(m_query->record().indexOf("PowerOff")).toUInt();
-        l->frames = m_query->value(m_query->record().indexOf("Frames")).toUInt();
+        l->pictureDist = m_query->value(m_query->record().indexOf("PictureDist")).toString();
         l->resolution = m_query->value(m_query->record().indexOf("Resolution")).toUInt();
         l->imagesPerFile = m_query->value(m_query->record().indexOf("ImagesPerFile")).toUInt();
         l->preBuf = m_query->value(m_query->record().indexOf("PreBuf")).toUInt();
         l->postBuf = m_query->value(m_query->record().indexOf("PostBuf")).toUInt();
+        l->radarH = m_query->value(m_query->record().indexOf("RadarH")).toReal();
+        l->distFrR = m_query->value(m_query->record().indexOf("DistFrR")).toReal();
+        l->targetH = m_query->value(m_query->record().indexOf("TargetH")).toReal();
+        l->lensFocal = m_query->value(m_query->record().indexOf("LensFocal")).toUInt();
     }
     else
     {
@@ -451,6 +535,7 @@ int userDB::Conf_updateEntry(SysConfig *l, DB_QUERY_FLAG flag)
         QString s = "UPDATE Configuration SET SpeedTenths = (:SpeedTenths),";
                 s = s + " RangeTenths = (:RangeTenths),";
                 s = s + " AutoTrigger = (:AutoTrigger),";
+                s = s + " AudioAlert = (:AudioAlert),";
                 s = s + " TargetSort = (:TargetSort),";
                 s = s + " Units = (:Units),";
                 s = s + " Direction = (:Direction),";
@@ -460,19 +545,24 @@ int userDB::Conf_updateEntry(SysConfig *l, DB_QUERY_FLAG flag)
                 s = s + " RadarPower = (:RadarPower),";
                 s = s + " Sensitivity = (:Sensitivity),";
                 s = s + " Volume = (:Volume),";
+                s = s + " Brightness = (:Brightness),";
                 s = s + " SerialNumber = (:SerialNumber),";
 #else
         QString s = "UPDATE Configuration SET BacklighOff = (:BacklighOff),";
 #endif
                 s = s + " PowerOff = (:PowerOff),";
-                s = s + " Frames = (:Frames),";
+                s = s + " PictureDist = (:PictureDist),";
                 s = s + " Resolution = (:Resolution),";
                 s = s + " ImagesPerFile = (:ImagesPerFile),";
 #ifdef HH1
                 s = s + " ImageSpacing = (:ImageSpacing),";
 #endif
                 s = s + " PreBuf = (:PreBuf),";
-                s = s + " PostBuf = (:PostBuf)";
+                s = s + " PostBuf = (:PostBuf),";
+                s = s + " RadarH = (:RadarH),";
+                s = s + " DistFrR = (:DistFrR),";
+                s = s + " TargetH = (:TargetH),";
+                s = s + " LensFocal = (:LensFocal)";
                 s = s + " WHERE ConfIndex = (:ConfIndex)";
 
         if (m_query->prepare(s))
@@ -481,6 +571,7 @@ int userDB::Conf_updateEntry(SysConfig *l, DB_QUERY_FLAG flag)
             m_query->bindValue(":SpeedTenths", l->speedTenths);
             m_query->bindValue(":RangeTenths", l->rangeTenths);
             m_query->bindValue(":AutoTrigger", l->autoTrigger);
+            m_query->bindValue(":AudioAlert", l->audioAlert);
             m_query->bindValue(":TargetSort", l->targetSort);
             m_query->bindValue(":Units", l->units);
             m_query->bindValue(":Direction", l->direction);
@@ -490,16 +581,22 @@ int userDB::Conf_updateEntry(SysConfig *l, DB_QUERY_FLAG flag)
             m_query->bindValue(":RadarPower", l->radarPower);
             m_query->bindValue(":Sensitivity", l->sensitivity);
             m_query->bindValue(":Volume", l->volume);
+            m_query->bindValue(":Brightness", l->brightness);
             m_query->bindValue(":SerialNumber", l->serialNumber);
 #endif
             m_query->bindValue(":BacklighOff", l->backlightOff);
             m_query->bindValue(":PowerOff", l->powerOff);
-            m_query->bindValue(":Frames", l->frames);
+            m_query->bindValue(":PictureDist", l->pictureDist);
             m_query->bindValue(":Resolution", l->resolution);
             m_query->bindValue(":ImagesPerFile", l->imagesPerFile);
             m_query->bindValue(":PreBuf", l->preBuf);
             m_query->bindValue(":PostBuf", l->postBuf);
+            m_query->bindValue(":RadarH", l->radarH);
+            m_query->bindValue(":DistFrR", l->distFrR);
+            m_query->bindValue(":TargetH", l->targetH);
+            m_query->bindValue(":LensFocal", l->lensFocal);
             m_query->bindValue(":ConfIndex", l->index);
+
 
             if (!m_query->exec())
                 retv = -ERR_UPDATE_EXEC;

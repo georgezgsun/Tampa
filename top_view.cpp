@@ -17,22 +17,18 @@
 #include "ColdFireCommands.h"
 #include "PicMsg.h"
 #include <QMessageBox>
+#include <linux/i2c-dev.h>
+#include <fstream>
 
 #ifdef HH1
 #include "widgets/icon_frame/icon_frame.h"
 #endif
 #include "db_types.h"
-#include "play_back.h"
+//#include "play_back.h"
+//#include "ticket_view.h"
 #include "printTicket.h"
 #include "back_ground.h"
-#include "hardButtons.h"
 #include "hh1MetaData.h"
-
-#define ONE_BILLON      1000000000L
-#define FOVH  ( 6.2f/35.0f * 180.0/PI )
-#define FOVV  ( 4.65f/35.0f * 180.0/PI )
-#define THETA_HS -5.0f
-#define THETA_VS -3.0f
 
 extern QElapsedTimer sysTimer;
 extern CRadarData RadarData;
@@ -50,12 +46,26 @@ float focusM[] = { 30, 50, 75, 100, 150, 200};
 int zoomValue[] = {3000, 5000, 7000, 9000, 14000, 18000};
 #endif
 
+bool iconFrameShow = false;
 bool printButtonActive = false;
+
 QString displayFileName;
 
 void* StartRadarPoll(void* radarDataArgs);
 
-pthread_t radarPollId;
+void* PlaybackThread(void* radarDataArgs);
+
+QString dNumber( QString s, float f)
+{
+  QString tmp = QString("    \"stalker-");
+  tmp.append(s);
+  tmp.append("\": \"");
+  tmp.append( QString::number(f));
+  tmp.append("\",\n");;
+  return tmp;
+}
+
+pthread_t radarPollId, playbackThreadId;
 
 FILE * capture_fd;
 
@@ -155,7 +165,13 @@ topView::topView() :
 
     this->initVariables();
 
-    this->TopViewInitTimer();
+    //add left frame
+    if( m_iconFrame ) {
+      delete m_iconFrame;
+      m_iconFrame = NULL;
+    }
+    
+    m_iconFrame = new iconFrame(40, 272, 5);
 
     if ( state::get().getState() == STATE_START) {
       this->openLoginScreen();
@@ -172,25 +188,21 @@ topView::topView() :
     struct Location loc;
     loc = u.getCurrentLoc();
     
-    //    DEBUG() << "loc spdLimit " << loc.speedLimit;
-    //    DEBUG() << "loc capSpd " << loc.captureSpeed;
-
     // Display zoom value on top screen
     
-#ifdef LIDARCAM
-    // figure this out for HH1
     int percent = u.FGBuf()->State_Of_Charge;
-    DEBUG() << "Percent " << percent;
+    
+    DEBUG() << "Battery Percent " << percent;
+
+#ifdef LIDARCAM
     if( percent > 10 ) {
       u.Send_Msg_To_PIC( Set_Power_Led_Green );
     }else{
       u.Send_Msg_To_PIC( Set_Power_Led_Red );
     }
 #endif
-
+    
     this->m_view->installEventFilter(this);
-
-    capture_file_is_open = false;
 
     ui->pb_displayjpg->setStyleSheet("background-color: rgba(0, 0, 0, 0); border: rgba(0, 0, 0, 0) ;");
     ui->lb_autoTitle->setStyleSheet("color: yellow; font: BOLD 8pt;");
@@ -200,11 +212,13 @@ topView::topView() :
     ui->lb_limit->setStyleSheet(ui->lb_auto->styleSheet());
     ui->lb_zoom->setStyleSheet(ui->lb_auto->styleSheet());
 
-
-//    QTimer::singleShot(1000, this, SLOT(initProcesses()));
+    //    QTimer::singleShot(1000, this, SLOT(initProcesses()));
     initProcesses();
 
     connect( this, SIGNAL(powerDown()), this, SLOT(powerDownSystem()) );
+    connect( this, SIGNAL(hh1Trigger()), this, SLOT(hh1TriggerPulled()) );
+    connect( this, SIGNAL(hh1Home()), this, SLOT(reopenTopScreen()) );
+    connect( this, SIGNAL(lowBatterySignal()), this, SLOT(lowBattery()) );
 
     hardButtons& uu = hardButtons::get();
     uu.settopView( this );
@@ -218,15 +232,32 @@ topView::topView() :
     vol = vol * 25;
 
     u.setVolume( vol );
+
+    unsigned int response;
+
+    // Make sure radar transmit is off
+    mpRadarData->Data.RadarMode.transmit = 0;
+    CRadarData &RadarData = backGround::get().getRadarData();	// This object provides the Oculii radar interface
+    DEBUG() << "Turn off radar transmit";
+    RadarData.Message4(&mpRadarData->Data.RadarMode);  // Set the Radar Mode
+    while((response = RadarData.CheckResponse()) == 0);   
 }
 
 topView::~topView()
 {
+  unsigned int response;
+
   //    DEBUG("Running topView destructor for object %08lx\n", (long unsigned int)this);
   if (m_TopViewTimer) {
     m_TopViewTimer->stop();
     delete m_TopViewTimer;
   }
+
+  mpRadarData->Data.RadarMode.transmit = 0;
+  CRadarData &RadarData = backGround::get().getRadarData();	// This object provides the Oculii radar interface
+  DEBUG() << "Turn off radar transmit";
+  RadarData.Message4(&mpRadarData->Data.RadarMode);  // Set the Radar Mode
+  while((response = RadarData.CheckResponse()) == 0);
 
 #ifdef HH1
   pthread_t radarPollIdSave = radarPollId;
@@ -237,6 +268,9 @@ topView::~topView()
 #endif
 
   delete ui;
+
+  //logFile->close();
+  logDebug.close();
 }
 
 //
@@ -259,40 +293,13 @@ void topView::openHomeScreen(int i)
 // Related to 'operat_frames.cpp'
 void topView::switchScreen(int flag)
 {
+  UNUSED( flag );
   
-    Q_ASSERT(m_oprFrames && m_oprScene && m_iconFrame);
-  
-    DEBUG() << "switch opr screen flag " << flag << "State " << state::get().getState();
-    Utils& u = Utils::get();
-    u.sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
-    
-    if (flag == OPR_SCREEN) {
-      if ( state::get().getState() == STATE_OPERATING) {
-        return;
-      }
-      m_iconFrame->hide();
-      m_oprFrames->setCurrentIndex(0);
-      state::get().setState(STATE_OPERATING );
-    } else if (flag == OPR_MENU_SCREEN) {
-	  if ( state::get().getState() == STATE_OPERATING_MENU) {
-		return;
-    }
-      m_iconFrame->show();
-      m_oprFrames->setCurrentIndex(1);
-      state::get().setState(STATE_OPERATING_MENU );
-    } else if (flag == REOPEN_HOME_SCREEN) {
-#ifdef CAPTURE_TEXT
-      if (capture_file_is_open)
-      {
-          fclose(capture_fd);
-      }
-      DEBUG() << "Capture File closed";
-#endif
-      this->openHomeScreen(REOPEN_HOME_SCREEN);
-    }
-    else {
-	//error
-    }
+  //  DEBUG() << "switch opr screen flag " << flag << "State " << state::get().getState();
+  Utils& u = Utils::get();
+  u.sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
+  emit hh1Home();
+  return;  
 }
 
 void topView::openOperateScreen(void)
@@ -300,15 +307,10 @@ void topView::openOperateScreen(void)
   unsigned int response;
   
   // DEBUG() << "openOperateScreen " << "State " << state::get().getState();
-#ifdef IS_TI_ARM
-#ifdef CAPTURE_TEXT
-  capture_fd = fopen(TEXT_CAPTURE_FILE, "w");
-  capture_file_is_open = true;
-#endif
-  
   Utils& u = Utils::get();
   u.sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
 
+  // This code sets up the theta_hs_ref, theta_rs_ref and theta_vs_ref
   pSensor->ReadSensor(&theta_vs_ref, &theta_rs_ref, &theta_hs_ref);
   
   if(theta_hs_ref > PI) theta_hs_ref = PI - theta_hs_ref;
@@ -320,32 +322,16 @@ void topView::openOperateScreen(void)
   if(theta_vs_ref > PI) theta_vs_ref = PI - theta_vs_ref;
   else if(theta_vs_ref < -PI) theta_vs_ref = PI + theta_vs_ref;
   
-#ifdef CAPTURE_TEXT
-  if (capture_file_is_open)
-  {
-    fprintf(capture_fd, "Sensor Reference\n  theta_hs_ref = %7.4f\n  theta_rs_ref = %7.4f\n  theta_vs_ref = %7.4f\n",
-	    theta_hs_ref, theta_rs_ref, theta_vs_ref);
-  }
-#endif
-#else
-  theta_hs_ref = 0.0f;
-  theta_rs_ref = 0.0f;
-  theta_vs_ref = 0.0f;
-#endif
+  //  printf("Sensor Relative Ref: ");
+  //  printf("hs %f rs %f vs %f\n", theta_hs_ref, theta_rs_ref, theta_vs_ref);
   
-  mpRadarData->Data.RadarMode.trackingDirection = 2;
+  mpRadarData->Data.RadarMode.trackingDirection = topView_mConf.direction;
   mpRadarData->Data.RadarMode.transmit = 1;
   CRadarData &RadarData = backGround::get().getRadarData();	// This object provides the Oculii radar interface
+  DEBUG() << "Turn on radar transmit";
   RadarData.Message4(&mpRadarData->Data.RadarMode);  // Set the Radar Mode
   while((response = RadarData.CheckResponse()) == 0);
-#ifdef CAPTURE_TEXT
-  if (capture_file_is_open)
-  {
-    fprintf(capture_fd, "Radar Mode:\n");
-    fprintf(capture_fd, "  Tracking direction: %hhu\n  Transmit: %hhu\n", mpRadarData->Data.RadarMode.trackingDirection, mpRadarData->Data.RadarMode.transmit);
-  }
-#endif
-  //QGraphicsScene *tmp = new QGraphicsScene (this);
+
   if (!m_oprScene) {
     m_oprScene = new QGraphicsScene;
   }
@@ -388,13 +374,14 @@ void topView::openOperateScreen(void)
   m_oprFramesProxy = m_oprScene->addWidget(m_oprFrames);
   m_oprFramesProxy->setPos(360, 0);
   
-  //add left frame
+
   if( m_iconFrame ) {
     delete m_iconFrame;
     m_iconFrame = NULL;
   }
   
-  m_iconFrame = new iconFrame(40, 240);
+  m_iconFrame = new iconFrame(40, 272, 5);
+  
   QGraphicsProxyWidget *proxyw = m_oprScene->addWidget(m_iconFrame);
   proxyw->setPos(0, 10);
   m_iconFrame->hide();
@@ -425,6 +412,7 @@ void topView::openOperateScreen(void)
 
 #endif
 
+#ifdef LIDARCAM
 void topView::drawZoomSquare(int zoomRatio)
 {
     static int ratio;
@@ -475,6 +463,7 @@ void topView::drawZoomSquare(int zoomRatio)
     m_zoomSquare = m_topScene->addRect(r, p);
     m_topScene->update();
 }
+#endif
 
 void topView::updateRecordView(bool endRecord)
 {
@@ -482,16 +471,18 @@ void topView::updateRecordView(bool endRecord)
   
   Q_ASSERT(m_topScene);
   
-   if (!m_recordMark)
-   {
-      QRect r(10, 14, 12, 12);
-      m_recordMark = m_topScene->addEllipse(r);
-      m_recordMark->setBrush(Qt::red);
-      m_recordMark->setPos(6, 6);
-   }
-
-   m_topScene->removeItem(m_recordMark);
-   m_topScene->addItem(m_recordMark);
+  if (!m_recordMark)
+  {
+    QRect r(10, 14, 12, 12);
+    m_recordMark = m_oprScene->addEllipse(r);
+    m_recordMark->setBrush(Qt::red);
+    m_recordMark->setPos(6, 6);
+    m_recordMark->stackBefore(m_oprFramesProxy);
+  }else{
+    m_oprScene->removeItem(m_recordMark);
+    delete m_recordMark;
+    this->m_recordMark = NULL;
+  }
 }
 
 void topView::displayRange( float distance )
@@ -650,9 +641,9 @@ int topView::initVariables()
     topSpeed = 0.0;
     
     // set backLightTimer and powerOffTimer
-    struct SysConfig config = u.getConfiguration();
-    backLightTime = config.backlightOff * 60;  // Time is in seconds, config is minutes, 
-    powerOffTime = config.powerOff * 60; // Time is in seconds, config is minutes, 
+    topView_mConf = u.getConfiguration();
+    backLightTime = topView_mConf.backlightOff * 60;  // Time is in seconds, config is minutes, 
+    powerOffTime = topView_mConf.powerOff * 60; // Time is in seconds, config is minutes, 
     
 #ifdef HH1
     m_rollLine = NULL;
@@ -669,7 +660,50 @@ int topView::initVariables()
     RadarConfig.radar_data_is_roadway = false;
     RadarConfig.port = serial;
     RadarConfig.num_to_show = 4;
+	
+    //zxm added
+    frameRate=15;
+    frameCnt = 0;
+    json_md_fd = 0;
+    m_playbackScreen=false;
 
+    // Set up 4 radar data display box
+    QColor color = QColor(255, 128, 128, 255);
+    QPen pen(color);
+    mP1 = pen;
+    mP1.setWidth(1);
+    color = QColor(255, 255, 0, 255);
+    pen.setColor(color);
+    mP2 = pen;
+    mP2.setWidth(1);
+    color = QColor(204, 102, 255, 255);
+    pen.setColor(color);
+    mP3 = pen;
+    mP3.setWidth(1);
+    color = QColor(0, 204, 255, 255);
+    pen.setColor(color);
+    mP4 = pen;
+    mP4.setWidth(1);
+
+    color = QColor(0, 0, 0, 255);
+    pen.setColor(color);
+    mP0 = pen;
+    mP0.setWidth(1);
+
+    mRect.setRect(0,0,0,0);
+    mRect1.setRect(0,0,0,0);
+    mRect2.setRect(0,0,0,0);
+    mRect3.setRect(0,0,0,0);
+    mRect4.setRect(0,0,0,0);
+
+    RadarConfig.Xs = -2.0f;
+    RadarConfig.Zs = 3.0f;
+    RadarConfig.FocalLength = 35.0f;
+    RadarConfig.SensorWidth = 6.2f;   // IMX 172, pixel size = 1.55 u x 4000 pixels
+    RadarConfig.SensorHeight = 4.65f; // IMX 172, pixel size = 1.55 u x 3000 pixels
+    RadarConfig.FOVh = RadarConfig.SensorWidth/RadarConfig.FocalLength * 180.0/PI;  //(10.15 degrees)
+    RadarConfig.FOVv = RadarConfig.SensorHeight/RadarConfig.FocalLength * 180.0/PI; //(7.61 degrees)
+	
     // Init the coordinate transformations
     Transforms.InitCoordTransforms(RadarConfig.Xs,
                                    RadarConfig.Zs,
@@ -686,7 +720,7 @@ int topView::initVariables()
         mpRadarData->Data.RadarOrientation.elevationAngle = 0.0f;
         mpRadarData->Data.RadarOrientation.rollAngle = 0.0f;
         mpRadarData->Data.RadarOrientation.radarHeight = RadarConfig.Zs;
-        mpRadarData->Data.RadarOrientation.targetHeight = 1.0f;
+        mpRadarData->Data.RadarOrientation.targetHeight = RadarConfig.Zt;
     }
     else
     {
@@ -703,14 +737,18 @@ void topView::connectSignals()
   hardButtons& u = hardButtons::get();
 
   u.EnableHardButtons(true);
+#ifdef LIDARCAM
   connect( ui->pb_zoomin, SIGNAL(clicked()), this, SLOT(zoomin()) );
   u.setHardButtonMap( 0, ui->pb_zoomin);
   connect( ui->pb_focus, SIGNAL(clicked()), this, SLOT(focusMode()) );
   u.setHardButtonMap( 1, ui->pb_focus);
+#endif
   connect( ui->pb_menu, SIGNAL(clicked()), this, SLOT(openMenuScreen()) );
   u.setHardButtonMap( 2, ui->pb_menu);
 
 #ifdef HH1
+  u.setHardButtonMap( 0, NULL );
+  u.setHardButtonMap( 1, NULL );
 //  DEBUG() << "connectSignals pb_record to openOperateScreen " << "State " << state::get().getState();
   connect( ui->pb_record, SIGNAL(clicked()), this, SLOT(openOperateScreen()) );
   u.setHardButtonMap( 3, ui->pb_record);
@@ -734,18 +772,10 @@ void topView::create_vkb()
    connect(m_vkb, SIGNAL(cancelKeyBoard()), this, SLOT(closeVKB()), Qt::UniqueConnection);
 }
  
-int htSeen = 0;
 void topView::emitHandleTargets()
 {
   if (state::get().getState() == STATE_OPERATING || state::get().getState() == STATE_OPERATING_MENU) {
     emit handleTargets();
-#ifdef JUNK
-    if( htSeen % (3*FRAMESPERSECOND) == 0 ) {
-      DEBUG() << "Elapsed " << sysTimer.elapsed();
-    }
-    htSeen++;
-    //  QCoreApplication::instance()->processEvents();
-#endif
   }
 }
 
@@ -859,6 +889,10 @@ int topView::initTopScene()
 
     Q_ASSERT(m_topScene);
 
+    QGraphicsProxyWidget *proxyw = m_topScene->addWidget(m_iconFrame);
+    proxyw->setPos(0, 10);
+    m_iconFrame->hide();
+
     //set background color to black
     QColor c(0, 0, 0, 255);
     QBrush bgB(c);
@@ -950,235 +984,201 @@ void topView::TopViewInitTimer()
     m_TopViewTimer = new QTimer(this);
     //    m_TopViewTimer->setInterval(TIMTER_INTERVAL);
     connect(m_TopViewTimer, SIGNAL(timeout()), this, SLOT(TopViewTimerHit()));
-    m_TopViewTimer->start( 1000 );
+    m_TopViewTimer->start( 67 );
 }
 
 void topView::TopViewTimerHit()
 {
-  //  static int count;
-  currentSeconds++;
-  //  DEBUG() << "Elapsed " << sysTimer.elapsed() << "CurrentSeconds " << currentSeconds;
-	
-#if defined(LIDARCAM) || defined(HH1)
-
-   // monitor speed and record if over the speed limit
-   // every thing happens when the trigger is Pulled
-   if (true == triggerPulled )
-   {
-#ifdef LIDARCAM
-     Utils& u = Utils::get();
-#ifndef SPEED_INROOM_DEBUG
-      // Normal operation
-      m_newRange = u.lidarRange();
-      mNewSpeed = u.lidarSpeed();
-#else
-      // In room
-      mNewSpeed = 41.5;
-      m_newRange -= 10;
-#endif
-
-      //DISPLAY the radar distance and range
-      // DEBUG()  << " m_range " << m_range << " m_newRange " << m_newRange;
-      if ( m_distance )
+  state& v = state::get();
+  
+  if(v.getPlaybackState())
+  {
+    if(!m_playbackScreen)
+    {
+      m_playbackScreen = true;
+      hardButtons::get().setHardButtonMap( 0, NULL);
+      hardButtons::get().setHardButtonMap( 1, NULL);
+      hardButtons::get().setHardButtonMap( 2, NULL);
+      hardButtons::get().setHardButtonMap( 3, NULL);
+      if(m_oprFrames==NULL)
+		m_oprFrames = new OperatFrames;
+      m_oprFrames->show();
+      m_oprFrames->move(360,0);
+      
+      radarDataArgs_t *pRadarDataArgs = backGround::get().getRadarDataArgs();
+      pRadarDataArgs->menuClass = (void *)(this);
+      if(pthread_create(&(playbackThreadId), NULL, &PlaybackThread, (void *)pRadarDataArgs))
       {
-         m_topScene->removeItem( m_distance);
-         delete m_distance;
-         m_distance = NULL;
+		DEBUG() << "Can't create PlaybackThread thread ";
+		Q_ASSERT(0);
+      }
+    }
+    updateEvidence(m_oprFrames);
+  }else{
+    if(m_playbackScreen) PlaybackExit();
+  }
+  
+  frameRate++;
+  
+  if(frameRate>=15) //once every second
+  {
+    frameRate=0;
+    
+    Utils& u = Utils::get();
+    currentSeconds++;
+    if (true == triggerPulled ) {
+#ifdef LIDARCAM
+      //  DEBUG() << "Elapsed " << sysTimer.elapsed() << "CurrentSeconds " << currentSeconds;
+      // monitor speed and record if over the speed limit
+      // every thing happens when the trigger is Pulled
+      lidarCamTriggerPulled();
+#else
+      //    hh1TriggerPulled(); // Do not do anything based on timerHit for hh1TriggerPulled, 
+#endif // LIDARCAM
+    }else{
+#ifdef LIDARCAM
+      lidarCamTriggerNotPulled();
+#else
+      //    hh1TriggerNotPulled(); // Do not do anything based on timerHit for hh1TriggerNotPulled
+#endif // LIDARCAM
+    }
+    
+    if ( true == m_recording ) {   // recording is going     
+#ifdef LIDARCAM
+      int zoomDis;
+      int zoomNum = mCamSetting.zoom.toInt();
+      int displayUnits = u.getDisplayUnits();
+      if (mCamSetting.focus == (QString)"AUTO")	{  // Auto focus mode
+	if (displayUnits == 1)  // kmH
+	  zoomDis = focusM[zoomNum-1];
+	else  // MPH or KNOTS
+	  zoomDis = focusFt[zoomNum-1];
+      }	else {  // Manual focus mode
+	zoomDis = mCamSetting.focus1;
       }
       
-      if ( m_range != m_newRange )
-      {
-         m_range = m_newRange;
-         displayRange( m_range );
-      }
-
-      //display the radar speed
-      // need to determine if this is km/h or mph
-      if (mRangeOnly == false &&  mSpeed != mNewSpeed )
-      {
-         mSpeed = mNewSpeed;
-         if( m_speed )
-         {
-           m_topScene->removeItem(m_speed);
-           delete m_speed;
-           m_speed = NULL;
-         }
-         switch( u.lidarDataBuf()->lidarStruct.DISPLAY_UNITS )
-         {
-            case 0: // MPH
-               if ((mSpeed > 6.0) || (mSpeed < -6.0) )
-                  displaySpeed( mSpeed );
-               break;
-            case 1: // km/h
-               if ((mSpeed > 10.0) || (mSpeed < -10.0) )
-                  displaySpeed( mSpeed );
-               break;
-            default:
-              break;
-         }
-      }
-
-      setRecordingText();  // Set Watermark
-      if ((m_recording == false) && (ui->pb_record->isEnabled() == true))
-      {
-         // Monitor the Speed, start recording if needed
-         monitorSpeed();
+      if (!mPhotoNum && m_range <= (zoomDis + 10)) {
+	QString fileName = u.getRecordingFileName() + "_1.jpg";
+	u.takePhoto(fileName, m_range);
+	mPhotoNum++;
       }
 #endif
-   }
-   else
-   {  // Trigger not pulled
-      if (mAutoRecording == true)
-      {  // Auto recording is still on
-         exeRecord();   // Stop it
-         mAutoRecording = false;
+      // how long the recording has been going?
+      mRecordingSecs++;
+      //     DEBUG() << "elapsed time " << sysTimer.elapsed() << "mRecordingSecs " << mRecordingSecs;
+      if (mRecordingSecs > topView_mConf.postBuf ) {   // Stop recording since maximum seconds are reached
+	exeRecord();  // timerHit kill recording
+	mAutoRecording = false;
       }
-   }
-
-  if ( true == m_recording )
-  {   // recording is going     
-#ifdef LIDARCAM
-     int zoomDis;
-     int zoomNum = mCamSetting.zoom.toInt();
-     int displayUnits = u.getDisplayUnits();
-     if (mCamSetting.focus == (QString)"AUTO")
-     {  // Auto focus mode
-        if (displayUnits == 1)  // kmH
-           zoomDis = focusM[zoomNum-1];
-        else  // MPH or KNOTS
-           zoomDis = focusFt[zoomNum-1];
-     }
-     else
-     {  // Manual focus mode
-        zoomDis = mCamSetting.focus1;
-     }
-
-     if (!mPhotoNum && m_range <= (zoomDis + 10))
-     {
-        QString fileName = u.getRecordingFileName() + "_1.jpg";
-        u.takePhoto(fileName, m_range);
-        mPhotoNum++;
-     }
-#endif
-     // how long the recording has been going?
-     mRecordingSecs++;
-     //     DEBUG() << "elapsed time " << sysTimer.elapsed() << "mRecordingSecs " << mRecordingSecs;
-     if (mRecordingSecs > MAX_RECORDING_SECS)
-     {   // Stop recording since maximum seconds are reached
-        exeRecord();
-        mAutoRecording = false;
-     }
-  }
-#else
-//   mNewSpeed = 38.5;    // Remove later
-//   m_newRange = 176;
-//   setRecordingText();  // Set Watermark
-#endif
-
-	// Activity moniotoring
-   if( activity == 0 )
-   {
-     // No activity
-     if( inactive == false )
-     {
-       // changing active to inactive and save the start of inactive
-       // DEBUG() << "Start inactive !!!";
-       inactive = true;
-       inactiveStart = currentSeconds;
-     }
-     else
-     {
-       // This is where we are inactive and determining how long we are inactive
-       qint64 elapsedTime = currentSeconds - inactiveStart;
-       
-       // Sleep the coldfire if tilt
-       // Hardcoded to 60 seconds for a possible tilt SLEEP to coldfire
-      if( coldFireSleep == false )
-      {
-        if( (elapsedTime % SLEEPCOLDFIREWHENTILTED) == 0 )
-        {
-	  DEBUG() << "Inactivity " <<  SLEEPCOLDFIREWHENTILTED  << " seconds seen" << currentSeconds ;
-	  // check if tilt active and over tilt to do the sleep
-#ifdef LIDARCAM
-	  if( u.tiltSeen() == true )
-	    {
+    }
+    
+    // Activity moniotoring
+    if( activity == 0 ) {
+      // No activity
+      if( inactive == false ) {
+	// changing active to inactive and save the start of inactive
+	// DEBUG() << "Start inactive !!!";
+	inactive = true;
+	inactiveStart = currentSeconds;
+      } else {
+	// This is where we are inactive and determining how long we are inactive
+	qint64 elapsedTime = currentSeconds - inactiveStart;
+	
+	// Sleep the coldfire if tilt
+	// Hardcoded to 60 seconds for a possible tilt SLEEP to coldfire
+	if( coldFireSleep == false ) {
+	  if( (elapsedTime % SLEEPCOLDFIREWHENTILTED) == 0 ) {
+	    DEBUG() << "Inactivity " <<  SLEEPCOLDFIREWHENTILTED  << " seconds seen" << currentSeconds ;
+	    // check if tilt active and over tilt to do the sleep
+	    if( u.tiltSeen() == true ) {
 	      // sleep the coldFire
 	      DEBUG() << "coldFireSleep set" << currentSeconds ;
+#ifdef LIDARCAM
 	      u.sendMbPacket( (unsigned char) CMD_SLEEP, 0, NULL, NULL );
 	      u.Send_Msg_To_PIC( Set_Power_Led_Both );
-	      coldFireSleep = true;
+#endif
+		coldFireSleep = true;
 	    }
-#endif
+	  }
 	}
-      }
-      
-      // Sleep the coldfire if tilt not being used
-      // Hardcoded to 150 seconds SLEEP to coldfire
-      if( coldFireSleep == false ) {
-	if( ( elapsedTime % SLEEPCOLDFIRE) == 0 ) {
-	  DEBUG() << "Inactivity " << SLEEPCOLDFIRE << "  seconds seen coldFireSleep " << currentSeconds ;
-	  // sleep the coldFire
+	
+	// Sleep the coldfire if tilt not being used
+	// Hardcoded to 150 seconds SLEEP to coldfire
+	if( coldFireSleep == false ) {
+	  if( ( elapsedTime % SLEEPCOLDFIRE) == 0 ) {
+	    DEBUG() << "Inactivity " << SLEEPCOLDFIRE << "  seconds seen coldFireSleep " << currentSeconds ;
+	    // sleep the coldFire
 #ifdef LIDARCAM
-	  u.sendMbPacket( (unsigned char) CMD_SLEEP, 0, NULL, NULL );
-	  u.Send_Msg_To_PIC( Set_Power_Led_Both );
+	    u.sendMbPacket( (unsigned char) CMD_SLEEP, 0, NULL, NULL );
+	    u.Send_Msg_To_PIC( Set_Power_Led_Both );
 #endif
-	  coldFireSleep = true;
+	    coldFireSleep = true;
+	  }
 	}
-      }
-      
-      // possible backLight off
-      if( backLightOn == true ) {
-	if( backLightTime > 0 ) {
-	  if( ( elapsedTime % backLightTime) == 0 ) {
-	    DEBUG() << "Inactivity " << backLightTime << " seconds seen BACKLIGHTON off" << currentSeconds ;
-	    hardButtons& h = hardButtons::get();
-	    h.Send_Display_Brightness( 0 );
-	    backLightOn = false;
+	
+	// possible backLight off
+	if( backLightOn == true ) {
+	  if( backLightTime > 0 ) {
+	    if( ( elapsedTime % backLightTime) == 0 ) {
+	      DEBUG() << "Inactivity " << backLightTime << " seconds seen BACKLIGHTON off" << currentSeconds ;
+#ifdef LIDARCAM
+	      hardButtons& h = hardButtons::get();
+	      h.Send_Display_Brightness( 0 );
+#else
+	      // display control turn off capability
+	      // This controls the backlight on the keypad
+	      QString cmd = QString("1");
+	      const QString qPath("/sys/kernel/timerPWM/PWM");
+	      QFile qFile(qPath);
+	      if (qFile.open(QIODevice::WriteOnly)) {
+		QTextStream out(&qFile); out << cmd;
+		qFile.close();
+	      }
+#endif
+	      backLightOn = false;
+	    }
+	  }
+	}
+	
+	// possible logout
+	
+	// possible powerdown
+	if( powerOffTime > 0 ) {
+	  if( ( elapsedTime % powerOffTime) == 0 ) {
+	    DEBUG() << "Inactivity " << powerOffTime << " seconds seen POWER OFF" << currentSeconds ;
+	    
+	    // close the local database
+	    u.closeUserDB();
+	    
+	    // sync the linux
+	    system("/bin/sync");
+	    
+	    // send message to pic and turn off power
+#ifdef LIDARCAM
+	    u.Send_Msg_To_PIC( Set_Power_Off);
+#else
+	    system( "/sbin/halt -p");
+#endif
+	    m_TopViewTimer->stop();
+	    QApplication::exit(0);
+	    return;
 	  }
 	}
       }
-      
-      // possible logout
-      
+    } else {  // Active
+      // There is activity
+      if( inactive == true ) {
+	// Changing from inactive to active!!
+	// do what is needed
+	// look at turn on touch screen
+	// unSLEEP the coldfire
+	//		DEBUG() << "Reactivate !!!";
+	if ( coldFireSleep == true ) {
+	  DEBUG() << "coldFireSleep clear" << currentSeconds ;
 #ifdef LIDARCAM
-      // possible powerdown
-      if( powerOffTime > 0 ) {
-	if( ( elapsedTime % powerOffTime) == 0 ) {
-	  DEBUG() << "Inactivity " << powerOffTime << " seconds seen POWER OFF" << currentSeconds ;
-	  
-	  // close the local database
-	  u.closeUserDB();
-	  
-	  // sync the linux
-	  system("/bin/sync");
-	  
-	  // send message to pic and turn off power
-	  u.Send_Msg_To_PIC( Set_Power_Off);
-	  m_TopViewTimer->stop();
-	  QApplication::exit(0);
-	  return;
-	}
-      }
-#endif
-     }
-   }
-   else
-   {  // Active
-     // There is activity
-     if( inactive == true )
-     {
-       // Changing from inactive to active!!
-       // do what is needed
-       // look at turn on touch screen
-       // unSLEEP the coldfire
-       //		DEBUG() << "Reactivate !!!";
-       if ( coldFireSleep == true )
-       {
-	 DEBUG() << "coldFireSleep clear" << currentSeconds ;
-#ifdef LIDARCAM
-	 u.sendMbPacket( (unsigned char) CMD_WAKEUP, 0, NULL, NULL );
-	 int percent = u.FGBuf()->State_Of_Charge;
-	 DEBUG() << "Percent " << percent;
+	  u.sendMbPacket( (unsigned char) CMD_WAKEUP, 0, NULL, NULL );
+	  int percent = u.FGBuf()->State_Of_Charge;
+	  DEBUG() << "Percent " << percent;
 	 if( percent > 10 ) {
 	   u.Send_Msg_To_PIC( Set_Power_Led_Green );
 	 }else{
@@ -1186,48 +1186,428 @@ void topView::TopViewTimerHit()
 	 }
 #endif
 	 coldFireSleep = false;
-       }
-       if ( backLightOn == false )
-       {
-	 DEBUG() << "Turn on Backlight" << currentSeconds ;
+	}
+	if ( backLightOn == false ) {
+	  DEBUG() << "Turn on Backlight" << currentSeconds ;
 #ifdef LIDARCAM
-	 hardButtons& h = hardButtons::get();
-	 int b = u.lidarDataBuf()->lidarStruct.HUD_BRIGHTNESS;
-	 h.Send_Display_Brightness( b * 20 );
+	  hardButtons& h = hardButtons::get();
+	  int b = u.lidarDataBuf()->lidarStruct.HUD_BRIGHTNESS;
+	  h.Send_Display_Brightness( b * 20 );
+#else
+	  // this code resets the display and keypad brightness back to last settings
+	  int brightness;
+	  
+	  // Get brightness from the database
+	  SysConfig & cfg = u.getConfiguration();
+	  brightness = cfg.brightness;
+	  
+	  QString cmd;
+	  
+	  switch ( brightness ) {
+	  case 0:
+	    cmd = QString("9");
+	    break;
+	  case 1:
+	    cmd = QString("6");
+	    break;
+	  case 2:
+	    cmd = QString("3");
+	    break;
+	  case 3:
+	    cmd = QString("0");
+	    break;
+	  default:
+	    break;
+	  }
+	  
+	  const QString qPath("/sys/kernel/timerPWM/PWM");
+	  QFile qFile(qPath);
+	  if (qFile.open(QIODevice::WriteOnly)) {
+	    QTextStream out(&qFile); out << cmd;
+	    qFile.close();
+	  }
 #endif
-	 backLightOn = true;
-       }
-       inactive = false;
-     }
-     // reset the activity counter, so we can determine if actual activity in the next timerHit
-     activity = 0;
-   }
-
+	  backLightOn = true;
+	}
+	inactive = false;
+      }
+      // reset the activity counter, so we can determine if actual activity in the next timerHit
+      activity = 0;
+    }
+    
 #ifdef HH1
-   //set date and time
-   state& v = state::get();
-   static int oldDays = 0;
-   if (v.getState() == STATE_TOP_VIEW)
-   {
-       QDateTime now = QDateTime::currentDateTime();
-       QString time = now.toString("hh:mm:ss");
-       ui->lb_zoom->setText(time);
-       int days = now.date().dayOfYear();
-       if (oldDays != days)
-       {
-           oldDays = days;
-           QString date = now.toString("MM-dd-yy");
-//            QByteArray ba = date.toLatin1();
-//            const char *buf1 = ba.data();
-//            printf("%s\n", buf1);
-           ui->lb_limit->setText(date);
-       }
-   }
+    //set date and time
+    //state& v = state::get();
+    static int oldDays = 0;
+    if (v.getState() == STATE_TOP_VIEW) 
+	{
+      QDateTime now = QDateTime::currentDateTime();
+      QString time = now.toString("hh:mm:ss");
+      ui->lb_zoom->setText(time);
+      int days = now.date().dayOfYear();
+      if (oldDays != days) 
+	  {
+		oldDays = days;
+		QString date = now.toString("MM-dd-yy");
+		//            QByteArray ba = date.toLatin1();
+		//            const char *buf1 = ba.data();
+		//            printf("%s\n", buf1);
+		ui->lb_limit->setText(date);
+      }
+    }
    else
-       oldDays = 0;
+     oldDays = 0;
 #endif
+    
+#ifdef IS_TI_ARM
+    // check battery level
+    Utils::get().updateFG();
+    int percent = Utils::get().FGBuf()->State_Of_Charge;
+    bool isCharging = Utils::get().FGBuf()->Is_Charging;
+    
+    // skip check if system is charging
+    if( isCharging == false ) {
+      // Just picked 5 because of ..., added greater than 0 for case where there is no battery in device.
+      if ( (percent < 5) && (percent > 0)) {
+	DEBUG() << "Battery percent " << percent << " calling lowBatterySignal() " ;
+	emit lowBatterySignal();
+      }
+    }
+    
+    // update info for the iconFrame
+    if ( m_iconFrame ) {
+     if( percent > 75 ) {
+       m_iconFrame->batterysetPixmap(":/dynamic/battery-4");
+     }else{
+       if( percent > 50 ) {
+	 m_iconFrame->batterysetPixmap(":/dynamic/battery-3");
+       }else{
+	 if( percent > 25 ) {
+	   m_iconFrame->batterysetPixmap(":/dynamic/battery-2");
+	 }else{
+	   if( percent > 10 ) {
+	     m_iconFrame->batterysetPixmap(":/dynamic/battery-1");
+	   }else{
+#ifdef LIDARCAM
+	     v.Send_Msg_To_PIC( Set_Power_Led_Red );
+#endif
+	     m_iconFrame->batterysetPixmap(":/dynamic/battery-0");
+	   }
+	 }
+       }
+     }
+     
+     if( true == Utils::get().FGBuf()->Is_Charging ) {
+       m_iconFrame->batterysetPixmap(":/dynamic/charging");
+     }
+     
+     // toggle the GPS connected icon
+     if( Utils::get().GPSBuf()->GPS_Fixed == true ) {
+       m_iconFrame->GPSsetPixmap(":/dynamic/GPS-on");
+     }else{
+       m_iconFrame->GPSsetPixmap(":/dynamic/GPS-off");
+     }
+     
+     // get the amount of storage being used
+     QProcess process;
+     process.start("df");
+     process.waitForFinished(1000); 
+     
+     QString stdout = process.readAllStandardOutput();
+     QString stderr = process.readAllStandardError();
+     //  DEBUG() << "stdout " << stdout << "stderr " << stderr;
+     
+     QStringList l = stdout.split('\n');
+     for( QStringList::iterator it = ++l.begin(); it != --l.end(); ) 
+	 {
+       if( it->contains("mmcblk0p1") ) 
+	   {
+		 QString current = *it;
+		 QString c = current.split(QRegExp("\\s+")).at(4);
+		 c.replace(QString("%"), QString(""));
+		 int percent = c.toInt();
+		 //	 DEBUG() << "Found " << current << "percent used " << percent;
+		 if( percent > 95 ) 
+		 {
+		   m_iconFrame->storagesetPixmap(":/dynamic/disk-0");
+		   break;
+		 }
+		 if( percent > 75 ) 
+		 {
+		   m_iconFrame->storagesetPixmap(":/dynamic/disk-4");
+		   break;
+		 }
+		 if( percent > 50 ) 
+		 {
+		   m_iconFrame->storagesetPixmap(":/dynamic/disk-3");
+		   break;
+		 }
+		 if( percent > 25 ) 
+		 {
+		   m_iconFrame->storagesetPixmap(":/dynamic/disk-2");
+		   break;
+		 }
+		 // determine which icon to display
+		 m_iconFrame->storagesetPixmap(":/dynamic/disk-1");
+		 break;
+       } 
+	   else 
+	   {
+		 ++it;
+       }
+     }
+    }
+#endif
+   }
+  return;
+}
 
-    return;
+void topView::updateEvidence(OperatFrames *m_oprFrames)
+{
+    if(json_md_fd) //if *.json and *.md exits
+    {
+        static u_int32_t frame=0;
+
+        if(frame!=frameCnt)
+        {
+            frame = frameCnt;
+            //DEBUG() << "frame" << frame;
+
+            char speedsArray[10], distancesArray[10];
+            memset(speedsArray, 0, 10);
+            memset(distancesArray, 0,10);
+
+            for(int k = RadarConfig.num_to_show - 1; k >= 0; k--)  // Iterate backwards so fastest targets are drawn first
+            {
+                //DEBUG() << "target" << k << "spd" << Video_Coords[k].V << "dst" << Video_Coords[k].R;
+                //DEBUG() << "RadarConfig.FOVh" << RadarConfig.FOVh; //10.1495
+                float FOVh = 2.0f * tanf(RadarConfig.FOVh * PI/360.0f) * Video_Coords[k].R;  // Width of camera horizontal FOV at target distance
+                float fract;
+                if(FOVh > 3.03f) {
+                  fract = 3.0f / FOVh;  //Fraction of screen width for 3 meter wide box
+                } else {
+                  fract = 0.99f; //but limit to 99% of screen size
+                }
+
+                //int camWidth = m_topScene->width() - m_oprFrames->width(); // m_topScene->width()=378, m_oprFrames->width()=120
+                int camWidth = m_topScene->width();
+                int camHeight = m_topScene->height();
+
+                int rWidth = camWidth * fract;  //Map to screen size
+                int rHeight = camHeight * fract;
+                if(rWidth < 1) rWidth = 1;
+                if(rHeight < 1) rHeight = 1;
+
+                int centerX = (0.5 * Video_Coords[k].X + 0.5) * (camWidth-1);
+                int centerY = (-0.5 * Video_Coords[k].Z + 0.5) * (camHeight-1);
+
+                //DEBUG() << "centerX" << centerX << "centerY" << centerY;
+
+                // based on units and speedTenths and rangeTenths      // Speed Need unit and decimal place info here also
+                switch( topView_mConf.units )
+                {
+                    case 0: // MPH
+                    case 2: // KNOTS
+                    {
+                      float speed = Video_Coords[k].V / 1.609344 ;
+                      float dst = Video_Coords[k].R  * 3.28084;
+                      if( topView_mConf.speedTenths == 0 ) {
+                        sprintf(speedsArray,"%3.0f MPH", speed);
+                      }else{
+                        sprintf(speedsArray,"%4.1f MPH", speed);
+                      }
+                      if( topView_mConf.rangeTenths == 0 ) {
+                        sprintf(distancesArray,"%3.0f FT", dst);
+                       }else{
+                        sprintf(distancesArray,"%4.1f FT", dst);
+                       }
+                    }
+                    case 1: // km/h
+                        if( topView_mConf.speedTenths == 0 ) {
+                          sprintf(speedsArray,"%3.0f km/h", Video_Coords[k].V);
+                        }else{
+                          sprintf(speedsArray,"%4.1f km/h", Video_Coords[k].V);
+                        }
+                        if( topView_mConf.rangeTenths == 0 ) {
+                          sprintf(distancesArray,"%3.0f m", Video_Coords[k].R);
+                        }else{
+                          sprintf(distancesArray,"%4.1f m", Video_Coords[k].R);
+                        }
+                    break;
+                    default:
+                    break;
+                }//end of switch
+
+                // Distance
+                QString speedsString = QString(speedsArray);
+                QString distancesString = QString(distancesArray);
+
+                if(k==0)
+                {
+                    m_topScene->addRect(mRect1, mP0);
+                    mRect1.setRect(centerX - (rWidth / 2), centerY - (rHeight / 2), rWidth, rHeight);
+                    m_topScene->addRect(mRect1, mP1);
+                    // Show text
+                    m_oprFrames->setSpeedDistance(OPR_SDLABEL1, speedsString, distancesString);
+                }
+                else if(k==1)
+                {
+                    m_topScene->addRect(mRect2, mP0);
+                    mRect2.setRect(centerX - (rWidth / 2), centerY - (rHeight / 2), rWidth, rHeight);
+                    m_topScene->addRect(mRect2, mP2);
+                    // Show text
+                    m_oprFrames->setSpeedDistance(OPR_SDLABEL2, speedsString, distancesString);
+                }
+                else if(k == 2)
+                {
+                    m_topScene->addRect(mRect3, mP0);
+                    mRect3.setRect(centerX - (rWidth / 2), centerY - (rHeight / 2), rWidth, rHeight);
+                    m_topScene->addRect(mRect3, mP3);
+                    // Show text
+                    m_oprFrames->setSpeedDistance(OPR_SDLABEL3, speedsString, distancesString);
+                }
+                else if(k == 3)
+                {
+                    m_topScene->addRect(mRect4, mP0);
+                    mRect4.setRect(centerX - (rWidth / 2), centerY - (rHeight / 2), rWidth, rHeight);
+                    m_topScene->addRect(mRect4, mP4);
+                    // Show text
+                    m_oprFrames->setSpeedDistance(OPR_SDLABEL4, speedsString, distancesString);
+                }
+            }//end of update target data
+        }
+    }
+    else
+    {
+        #if 1
+        static float speed;
+        static float range;
+        char sbuf[10];
+
+        QString speedsString = QString("speed1");
+        QString distancesString = QString("dist1");
+
+        if(range>3.33)
+            range -= 3.33;
+        else
+            range = 1003.23;
+
+        if(speed<120)
+            speed += 3.33;
+        else
+            speed = 12.34;
+
+        snprintf(sbuf, 10, "%5.2fmph", speed);
+        sbuf[strlen(sbuf)]='\0';
+        speedsString = QString(sbuf);
+
+        snprintf(sbuf, 10, "%5.2fft", range);
+        sbuf[strlen(sbuf)]='\0';
+        distancesString = QString(sbuf);
+
+        m_oprFrames->setSpeedDistance(OPR_SDLABEL1, speedsString, distancesString);
+
+        if(range>3.33)
+            range -= 3.33;
+        else
+            range = 1003.23;
+
+        if(speed<120)
+            speed += 3.33;
+        else
+            speed = 12.34;
+
+        snprintf(sbuf, 10, "%5.2fmph", speed);
+        sbuf[strlen(sbuf)]='\0';
+        speedsString = QString(sbuf);
+
+        snprintf(sbuf, 10, "%5.2fft", range);
+        sbuf[strlen(sbuf)]='\0';
+        distancesString = QString(sbuf);
+
+        m_oprFrames->setSpeedDistance(OPR_SDLABEL2, speedsString, distancesString);
+
+        if(range>3.33)
+            range -= 3.33;
+        else
+            range = 1003.23;
+
+        if(speed<120)
+            speed += 3.33;
+        else
+            speed = 12.34;
+
+        snprintf(sbuf, 10, "%5.2fmph", speed);
+        sbuf[strlen(sbuf)]='\0';
+        speedsString = QString(sbuf);
+
+        snprintf(sbuf, 10, "%5.2fft", range);
+        sbuf[strlen(sbuf)]='\0';
+        distancesString = QString(sbuf);
+
+        m_oprFrames->setSpeedDistance(OPR_SDLABEL3, speedsString, distancesString);
+
+        if(range>3.33)
+            range -= 3.33;
+        else
+            range = 1003.23;
+
+        if(speed<120)
+            speed += 3.33;
+        else
+            speed = 12.34;
+
+        snprintf(sbuf, 10, "%5.2fmph", speed);
+        sbuf[strlen(sbuf)]='\0';
+        speedsString = QString(sbuf);
+
+        snprintf(sbuf, 10, "%5.2fft", range);
+        sbuf[strlen(sbuf)]='\0';
+        distancesString = QString(sbuf);
+
+        m_oprFrames->setSpeedDistance(OPR_SDLABEL4, speedsString, distancesString);
+
+        // Draw a cross cursor
+        //QPen p0(Qt::black);
+        QPen p1(Qt::green);
+        //QPen p2(Qt::yellow);
+        //QPen p3(Qt::red);
+
+        qreal centerX, centerY;
+        centerX = (width() - ui->frame->width()) >> 1;
+        centerY = height() >> 1;
+        //DEBUG() << "centerX=" << centerX;
+        //DEBUG() << "centerY=" << centerY;
+        qreal halfLen = centerX / 2;
+        (void)m_topScene->addLine(halfLen, centerY, centerX + halfLen, centerY, p1);
+        (void)m_topScene->addLine(centerX, centerY - 30, centerX, centerY + 30, p1);
+
+        // Draw tracking box
+        static qreal offset=10;
+        m_topScene->addRect(mRect1,mP0); //erase all previous boxes
+        m_topScene->addRect(mRect2,mP0);
+        m_topScene->addRect(mRect3,mP0);
+        m_topScene->addRect(mRect4,mP0);
+
+        if(offset<100)
+            offset += 5;
+        else
+            offset = 10;
+
+        //mRect.setRect(centerX - (rWidth / 2), centerY - (rHeight / 2), rWidth, rHeight);
+        mRect1.setRect(halfLen+offset, offset*2, offset, offset);
+        mRect2.setRect(offset, offset, offset, offset);
+        mRect3.setRect(halfLen+offset, offset, offset/2, offset/2);
+        mRect4.setRect(halfLen+offset*1.5, offset*1.5, offset/2, offset/2);
+
+        m_topScene->addRect(mRect1,mP1); //draw new box1
+        m_topScene->addRect(mRect2,mP2); //draw new box2
+        m_topScene->addRect(mRect3,mP3); //draw new box3
+        m_topScene->addRect(mRect4,mP4); //draw new box4
+        //m_topScene->update(); no difference
+        #endif
+    }
+
 }
 
 void topView::setUserName(QString s)
@@ -1276,8 +1656,8 @@ void topView::exeLogin()
 	  //get the login user info
 	  retv = m_userDB->getNextEntry(TBL_USERS, (DBStruct *)&m_currUser);
 
-     Util.createSession( &m_currUser );
-     openTopScreen();
+	  Util.createSession( &m_currUser );
+	  openTopScreen();
 	  
 	  //delete login scene
 	  if (m_loginScene) {
@@ -1357,24 +1737,24 @@ void topView::exeQuickLogin()
   
   int retv = m_userDB->queryEntry(TBL_USERS, (DBStruct *)&u, QRY_BY_MULTI_FIELDS);
   if (retv == 1) {
-	// switch to top opertaion menu
-	m_loginSuccess = 1;
-//	this->openTopScreen();
-	
+    // switch to top opertaion menu
+    m_loginSuccess = 1;
+    //	this->openTopScreen();
+    
     struct Users m_currUser;    //the current login user
-	//get the login user info
-	retv = m_userDB->getNextEntry(TBL_USERS, (DBStruct *)&m_currUser);
-
-   Util.createSession( &m_currUser );
-   openTopScreen();
-	
-	//delete
-	if (m_loginScene) {
-	  //m_currProxyWidget->deleteLater();
-	  m_loginScene->deleteLater();
-	  m_loginScene = NULL;
-	}
-	return;
+    //get the login user info
+    retv = m_userDB->getNextEntry(TBL_USERS, (DBStruct *)&m_currUser);
+    
+    Util.createSession( &m_currUser );
+    openTopScreen();
+    
+    //delete
+    if (m_loginScene) {
+      //m_currProxyWidget->deleteLater();
+      m_loginScene->deleteLater();
+      m_loginScene = NULL;
+    }
+    return;
   } 
   emit clearLogin();
 }
@@ -1415,30 +1795,32 @@ void topView::exeRecord()
 
     DEBUG() << ticketFileName;
     
-    printTicket::get().print(ticketFileName);
+   // printTicket::get().print(ticketFileName);
 
     return;
   }
   
    Utils& u = Utils::get();
-   u.sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
+
+   // TODO different sound for violation recording
+   if( topView_mConf.audioAlert == 1 ) {
+     u.sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
+   }
 
    if ((m_recording == false) && (ui->pb_record->isEnabled() == true))
    {
-      DEBUG() << "recording start ";
-      m_recording = true;
-      mPhotoNum = 0; // Can take photo now
-      ui->pb_record->setText("STOP\nRECORD");
-
-      updateRecordView(false);
-      ui->pb_menu->setEnabled(false);
-#if defined(LIDARCAM) || defined(HH1)
-      hardButtons::get().setHardButtonMap( 2, NULL);
-      int retv = u.sendCmdToCamera(CMD_RECORD, 0);
-      if (retv != 0)
-        qWarning() << "set camera record failed";
-#endif
-      mRecordingSecs = 0;
+     m_recording = true; // as soon as possible grab the fact we are recording
+     DEBUG() << "recording start ";
+     mPhotoNum = 0; // Can take photo now
+     ui->pb_record->setText("STOP\nRECORD");
+     
+     updateRecordView(false);
+     ui->pb_menu->setEnabled(false);
+     hardButtons::get().setHardButtonMap( 2, NULL);
+     int retv = u.sendCmdToCamera(CMD_RECORD, 0);
+     if (retv != 0)
+       qWarning() << "set camera record failed";
+     mRecordingSecs = 0;
    }
    else
    {
@@ -1478,10 +1860,11 @@ void topView::exeRecord()
       DEBUG() << "After figure offset violationTimeStamp " << violationTimeStamp << " offset " << offset;
 
       // TODO need to figure out real offset to the start of the video
-      
+      // m_RecordingFile = u.getRecordingFileName(); // store this recording filename for future picture taken
       QString fileName = u.getRecordingFileName() + ".md";
       
       DEBUG() << "Filename " << fileName;
+      //DEBUG() << "Basename " << mRecordingFileName;
       
       QFile file( fileName);
       if(!file.open(QIODevice::WriteOnly | QFile::Truncate )) {
@@ -1558,16 +1941,19 @@ void topView::reopenTopScreen()
 
 int topView::openLoginScreen()
 {
-	// init the zoom on the camera
-	initZoom();
-
-#if defined(LIDARCAM) || defined(HH1)
+#ifdef LIDARCAM
+  // init the zoom on the camera
+  initZoom();
+#endif
+  
+#ifdef TODO
    Utils& u = Utils::get();
+   // HH1 first phase never have any data in the video or photo's
    // enabe the watermark information on the video display
    u.enableWaterMark();
    u.sendCmdToCamera(CMD_TIMESTAMP, 1);   // Enable timestamp
 #endif
-
+   
    initLoginScene();
    showFullView();
    m_view->setScene(m_loginScene);
@@ -1581,7 +1967,30 @@ int topView::openLoginScreen()
 
 void topView::openTopScreen()
 {
-   Utils& u = Utils::get();
+    // start the timer and logDebug after person has logged in.
+    // cut back on cpu usage during bring up/login
+    this->TopViewInitTimer();
+
+    //logFile = new QFile("/mnt/mmc/ipnc/jsmith/top_view.log");
+    //QString filenameLog("/mnt/mmc/ipnc/jsmith/top_view.log");
+    //if (logFile->open( QIODevice::WriteOnly | QIODevice::Text ))
+    logDebug.open("/mnt/mmc/ipnc/jsmith/top_view.log", std::ios::app);
+    if (logDebug.is_open())
+    {
+        //logDebug(&logFile);
+        //QTextStream logDebug(logFile);
+        logDebug << "Log file openned @ " << QDateTime::currentDateTime().toString().toStdString() << std::endl << std::flush;
+        DEBUG() << "Opened the log file";
+    }
+    else
+    {
+        //QTextStream logDebug(stdout);
+        DEBUG() << "Cannot opened the log file";
+        //logDebug << "Cannot opened the log file." << std::endl << std::flush;
+    }
+    
+
+    Utils& u = Utils::get();
    this->initTopScene();
    this->showTopView();
    m_view->setScene(m_topScene);
@@ -1611,11 +2020,47 @@ void topView::openTopScreen()
 
    int retv = u.db()->queryEntry(TBL_LOCATION, (DBStruct *)&loc, QRY_BY_KEY);
    if (retv == 1)
-      retv = u.db()->getNextEntry(TBL_LOCATION, (DBStruct *)&loc);
+     retv = u.db()->getNextEntry(TBL_LOCATION, (DBStruct *)&loc);
+
    u.setCurrentLoc(loc); // Set the default one
 
-   //   DEBUG() << "loc spdLimit " << loc.speedLimit;
-   //   DEBUG() << "loc capSpd " << loc.captureSpeed;
+   //   DEBUG() << "loc spdLimit " << loc.speedLimit << "loc capSpd " << loc.captureSpeed;
+   
+   speedLimit = loc.speedLimit.toFloat();
+   mCaptureSpeed = loc.captureSpeed.toFloat();
+
+
+   //initialize lastDistance and target ID
+   for (int i = 0; i < MAX_TARGETS; i++)
+   {
+       lastDistance[i] = 0;
+       maxSpeed[i] = 0;
+       targetID[i] = 0;
+   }
+
+   // Get picture distance from database mConf.pictureDist
+   SysConfig mConf = u.getConfiguration();
+   threshold0 = mConf.pictureDist.toFloat();
+   // because system is using kph internally, so captureSpeed needs to be converted to kph
+   switch( topView_mConf.units ) {
+   case 0: // MPH
+   case 2: // KNOTS
+     {
+       mCaptureSpeed *= 1.60934;
+       threshold0 = threshold0 / 3.28;
+     }
+     break;
+   case 1: // km/h
+	break;
+   default:
+     break;
+   }
+   
+   // get local copy of autoTrigger
+   autoTrigger =  topView_mConf.autoTrigger;
+
+   DEBUG() << "speedLimit " << speedLimit << "captureSpeed " << mCaptureSpeed << "pictureDistance " << threshold0 << " autoTrigger " << autoTrigger;
+   DEBUG() << "units " << topView_mConf.units << " spd tenths " << topView_mConf.speedTenths << " range tenths " << topView_mConf.rangeTenths;
 
 #ifdef LIDARCAM
    // Display zoom value on top screen
@@ -1639,8 +2084,8 @@ void topView::openTopScreen()
    centerX = (width() - ui->frame->width()) >> 1;
    centerY = height() >> 1;
    qreal halfLen = centerX / 2;
-   m_rollLine = m_topScene->addLine(halfLen, centerY, centerX + halfLen, centerY, p);
-   m_vertLine = m_topScene->addLine(centerX, centerY - 30, centerX, centerY + 30, p);
+   (void)m_topScene->addLine(halfLen, centerY, centerX + halfLen, centerY, p);
+   (void)m_topScene->addLine(centerX, centerY - 30, centerX, centerY + 30, p);
    m_topScene->update();
 #else
 
@@ -1686,6 +2131,22 @@ void topView::openTopScreen()
       value1 = 2;     // DD/MM/YYYY, 1 -> MM/DD/YYYY
    u.sendCmdToCamera(CMD_SECURITY_DATEFORMAT, value1);
 #endif   
+
+   // do this last
+   this->TopViewInitTimer();
+   
+   logFile = new QFile("/mnt/mmc/ipnc/jsmith/top_view.log");
+   //QString filenameLog("/mnt/mmc/ipnc/jsmith/top_view.log");
+   if (logFile->open(QIODevice::Append | QIODevice::WriteOnly | QIODevice::Text )) {
+     //logDebug(&logFile);
+     QTextStream logDebug(logFile);
+     logDebug << "Opened the log file." << endl;
+     DEBUG() << "Opened the log file";
+   } else {
+     QTextStream logDebug(stdout);
+     DEBUG() << "Cannot opened the log file";
+     logDebug << "Cannot opened the log file." << endl;
+   }
 }
 
 //
@@ -1734,12 +2195,14 @@ void topView::closeVKB()
 }
 
 
+#ifdef LIDARCAM
 void topView::monitorSpeed()
 {
-   // we are here because trigger is pulled.
-   // get current speed limit and capture speed
-   // if mNewSpeed is above or equal to capture speed start recording
-   // recording is hardcoded to max. 26 seconds.
+  // for lidarcam
+  // we are here because trigger is pulled.
+  // get current speed limit and capture speed
+  // if mNewSpeed is above or equal to capture speed start recording
+  // recording is hardcoded to max. 26 seconds.
 
    Utils& u = Utils::get();
    struct Location loc;
@@ -1755,11 +2218,12 @@ void topView::monitorSpeed()
    if ( fabs( mNewSpeed) > captureSpeed  )
    {
       // TODO add speed/range to the recording
-      exeRecord();   // Start recording
+      exeRecord();   // Start recording based on speed in LIDARCAM
       mAutoRecording = true;
    }
    return;
 }
+#endif
 
 void topView::setRecordingText()
 {
@@ -1835,8 +2299,7 @@ void topView::setRecordingText()
 #ifdef LIDARCAM
                memcpy(SN_str, &u.lidarDataBuf()->lidarStruct.SERIAL_NUMBER[0], 8);
 #else
-	       SysConfig & cfg = u.getConfiguration();
-               memcpy(SN_str, cfg.serialNumber.toStdString().c_str(), 8);
+               memcpy(SN_str, topView_mConf.serialNumber.toStdString().c_str(), 8);
                
 #endif
                SN_str[8] = '\0';
@@ -1925,9 +2388,9 @@ void topView::setRecordingText()
    }
 }
 
+#ifdef LIDARCAM
 void topView::zoomin()
 {
-#ifdef LIDARCAM
    Utils& u = Utils::get();
 
 /*
@@ -1968,7 +2431,6 @@ void topView::zoomin()
    }
 
    displayZoom( zoomValue );
-#endif
 }
 
 void topView::focusMode()
@@ -2041,7 +2503,6 @@ void topView::focusMode()
 void topView::initZoom()
 {
    queryCamSetting();
-#ifdef LIDARCAM
    Utils& u = Utils::get();
    int zoomValue = mCamSetting.zoom.toInt();
    if( (zoomValue >= ZOOM_MIN ) && (zoomValue <=  ZOOM_MAX) )
@@ -2057,8 +2518,8 @@ void topView::initZoom()
    // Setup the focus mode
    DEBUG() << "Focus mode: " << mCamSetting.focus.toLatin1().data() ;
    u.sendCmdToCamera(CMD_FOCUS, (int)mCamSetting.focus.toLatin1().data());
-#endif
 }
+#endif
 
 // Read camera configuration information from database
 void topView::queryCamSetting()
@@ -2114,12 +2575,9 @@ void topView::queryCamSetting()
 
    if (retv)
    {  // if for any reason, did not get the camera settting, use default
-      mCamSetting.zoom = QString("1");
-      mCamSetting.focus = QString("AUTO");
-      mCamSetting.focus1 = 500;
+      mCamSetting.mode = QString("AUTO");
       mCamSetting.shutter = QString("AUTO");
-      mCamSetting.color = QString("AUTO");
-      mCamSetting.iris = QString("AUTO");
+      mCamSetting.ev = QString("0");
       mCamSetting.gain = QString("AUTO");
       DEBUG() << "Error. Use Default Camera Setting";
    }
@@ -2163,32 +2621,19 @@ void topView::displayZoom( int zoomNum )
 #ifdef HH1
 void topView::processTargets()
 {
-
-#ifdef JUNK
-static int ptSeen = 0;
-static int ptSeen1 = 0;
-
-if( ptSeen % (3*FRAMESPERSECOND) == 0 ) {
-    DEBUG() << "Elapsed " << sysTimer.elapsed();
-  }
-  ptSeen++;
-#endif
-
   if(!m_oprScene) {
-#ifdef JUNK
-    if( ptSeen1 % (3*FRAMESPERSECOND) == 0 ) {
-      DEBUG() << "Elapsed " << sysTimer.elapsed();
-    }
-    ptSeen1++;
-#endif
     return;
   }
 
+  // make sure activity does not affect tracking
+  // bump activity will show that activity is happening.
+  activity++;
+  
   // Raw data from the senson
   pSensor->ReadSensor(&theta_vs, &theta_rs, &theta_hs);
   
   // Relative values cacuated here
-  float theta_hs_rel = theta_hs_ref - theta_hs;
+  float theta_hs_rel = theta_hs - theta_hs_ref;
   if(theta_hs_rel > PI) theta_hs_rel = PI - theta_hs_rel;
   else if(theta_hs_rel < -PI) theta_hs_rel = PI + theta_hs_rel;
   
@@ -2203,39 +2648,13 @@ if( ptSeen % (3*FRAMESPERSECOND) == 0 ) {
   //    printf("Reference az angle = %f, Relative az angle = %f\n", theta_hs_ref*DEG_PER_RAD, theta_hs_rel*DEG_PER_RAD);
   //    printf("Reference rl angle = %f, Relative rl angle = %f\n", theta_rs_ref*DEG_PER_RAD, theta_rs_rel*DEG_PER_RAD);
   //    printf("Reference el angle = %f, Relative el angle = %f\n", theta_vs_ref*DEG_PER_RAD, theta_vs_rel*DEG_PER_RAD);
-  
-#ifdef CAPTURE_TEXT
-  if (capture_file_is_open)
-  {
-    fprintf(capture_fd, "Sensor Position\n  theta_hs_rel = %7.4f\n  theta_rs_rel = %7.4f\n  theta_vs_rel = %7.4f\n",
-	    theta_hs_rel, theta_rs_rel, theta_vs_rel);
-  }
-#endif
-  
+ 
   // Set up the transform with the current sensor data
   Transforms.UpdateSensor(theta_vs_rel, theta_rs_rel, theta_hs_rel);
 
-#ifdef JUNK
-  // Debug
-  float accTotal = sqrtf(((float)(accBuf.xAxis) * (float)(accBuf.xAxis)) +
-			 ((float)(accBuf.yAxis) * (float)(accBuf.yAxis)) +
-			 ((float)(accBuf.zAxis) * (float)(accBuf.zAxis)));
-  frameMetaData.accData_x = (float)(accBuf.xAxis)/accTotal;
-  frameMetaData.accData_y = (float)(accBuf.yAxis)/accTotal;
-  frameMetaData.accData_z = (float)(accBuf.zAxis)/accTotal;
-  
-  float magTotal = sqrtf(((float)(magBuf.xAxis) * (float)(magBuf.xAxis)) +
-			 ((float)(magBuf.yAxis) * (float)(magBuf.yAxis)) +
-			 ((float)(magBuf.zAxis) * (float)(magBuf.zAxis)));
-  frameMetaData.magData_x = (float)(magBuf.xAxis)/magTotal;
-  frameMetaData.magData_y = (float)(magBuf.yAxis)/magTotal;
-  frameMetaData.magData_z = (float)(magBuf.zAxis)/magTotal;
-  //    float rollAngle = atan2f(frameMetaData.accData_x, frameMetaData.accData_z);
-  //    float pitchAngle = atan2f(frameMetaData.accData_y, frameMetaData.accData_z);
-#endif
 
-//
-// Begin roll line display
+  //
+  // Begin roll line display
     float rollAngle = theta_rs_rel;
     float pitchAngle = theta_vs_rel;
     int camWidth = m_oprScene->width() - m_oprFrames->width();
@@ -2247,17 +2666,17 @@ if( ptSeen % (3*FRAMESPERSECOND) == 0 ) {
     int centerScreenX = 0.5 * (camWidth-1);
     int centerScreenY = 0.5 * (camHeight-1);
 
-// Rotate the roll line position to the unit axes
+    // Rotate the roll line position to the unit axes
     float xr = theta_hs_rel;
     float yr = 0.0f;
     float zr = -theta_vs_rel;
-// Rotate through roll angle around Y axis
+    // Rotate through roll angle around Y axis
     float rx = xr * cosf(-rollAngle) - zr * sinf(-rollAngle);  // Rotate around Z axis
     float ry = yr;
     float rz = xr * sinf(-rollAngle) + zr * cosf(-rollAngle);
-// Roll through pitch Angle around X axis
+    // Roll through pitch Angle around X axis
     float ux = rx;                                                  // Rotate around X axis
-//    float uy = ry * cosf(-pitchAngle) - rz * sinf(-pitchAngle);   // Note: Y is not used
+    //    float uy = ry * cosf(-pitchAngle) - rz * sinf(-pitchAngle);   // Note: Y is not used
     float uz = ry * sinf(-pitchAngle) + rz * cosf(-pitchAngle);
 
     float pitchDisplay = uz * 2.0f * DEG_PER_RAD/RadarConfig.FOVv;
@@ -2266,15 +2685,17 @@ if( ptSeen % (3*FRAMESPERSECOND) == 0 ) {
     int centerX = centerScreenX - centerScreenX * horizDisplay;
     if(centerX < 0) centerX = 0;
     else if(centerX > camWidth - 1) centerX = camWidth -1;
+    
     int centerY = centerScreenY - centerScreenY * pitchDisplay;
     if(centerY < 0) centerY = 0;
-    else if(centerY > camHeight - 1) centerX = camHeight -1;
+    else if(centerY > camHeight - 1) centerY = camHeight -1;
 
-//#define ROLL_LINE_DEBUG
+    //#define ROLL_LINE_DEBUG
 #ifdef ROLL_LINE_DEBUG
     printf("Sensor Relative: ");
-    printf("hs %f rs %f vs %f\n", theta_hs_rel * DEG_PER_RAD, theta_rs_rel * DEG_PER_RAD, theta_vs_rel * DEG_PER_RAD);
-    printf("Xdev = %f Ydev = %f Zdev = %f\n", xr, 0.0f, zr);
+    printf("hs %f rs %f vs %f\n", theta_hs_rel, theta_rs_rel, theta_vs_rel);
+    printf("FOVv %f FOVh %f\n", RadarConfig.FOVv, RadarConfig.FOVh);
+    printf("Xdev = %f Ydev = %f Zdev = %f\n", ux, 0.0f, uz);
     printf("pitchDisplay = %f horizDisplay = %f\n", pitchDisplay, horizDisplay);
     printf("Line position: ");
     printf("X: %6d ", centerX);
@@ -2294,26 +2715,19 @@ if( ptSeen % (3*FRAMESPERSECOND) == 0 ) {
     m_rollLine = m_oprScene->addLine(centerX + rHeight*sinf(rollAngle)/2.0f, centerY + rHeight*cosf(rollAngle)/2.0f,
                                      centerX - rHeight*sinf(rollAngle)/2.0f, centerY - rHeight*cosf(rollAngle)/2.0f, rollPen);
 
-// End roll line display
+    // End roll line display
 
-  int fastest_Targets[4];
-  float fastest_Speeds[4];
-  
-  for(int i = 0; i < 4; i++) {
+    int fastest_Targets[4];
+    float fastest_Speeds[4];
+    //UINT32 Radar_Target_IDs[4];
+
+    for(int i = 0; i < 4; i++) {
     fastest_Targets[i] = -1;  // Init indexes for fastest targets to invalid index
     fastest_Speeds[i] = 0.0f; // and speeds to zero
   }
   
   //  Note:  We could begin processing targets against violation rules here.
   //         It could also be done after sorting for fastest targets if that provides an advantage
-  
-#ifdef CAPTURE_TEXT
-  if (capture_file_is_open)
-  {
-    fprintf(capture_fd, "Targets Poll:\n");
-        fprintf(capture_fd, "  Number of Targets: %d\n", mpRadarData->Data.Targets.numTargets);
-  }
-#endif
 
   // Section to save metaData
   // get timeMS this is the timeStamp used for anything associated with this 
@@ -2334,31 +2748,307 @@ if( ptSeen % (3*FRAMESPERSECOND) == 0 ) {
   
   //    DEBUG() << "numTargets = " << mpRadarData->Data.Targets.numTargets;
   float speed;
+  float averageDelay = 1/15 + 0.20; // suppose average delay is 1/15 + 0.2 s
+  float threshold = 0;
+  bool takePicture = false;
+  float d;
   int num_fastest = 0;  // Init to no fastest targets
+  float FOVf = 2.0f * tanf(RadarConfig.FOVh * PI/360.0f);  // Factor of camera horizontal FOV at target distance, width = FOVf * Video_Coords->R
+  QString base_file_name;
+
+  coord_struct Radar_Coords[MAX_TARGETS];
+  coord_struct Video_Coords[MAX_TARGETS];
+  coord_struct Roadway_Coords[MAX_TARGETS];
   for(int i = 0; i < mpRadarData->Data.Targets.numTargets; i++)
   {
-    //        speed = mpRadarData->Data.extraData[i].speed;
-    speed = sqrtf( mpRadarData->Data.Targets.RadarTargets[i].xVelocity * mpRadarData->Data.Targets.RadarTargets[i].xVelocity +
-		   mpRadarData->Data.Targets.RadarTargets[i].yVelocity * mpRadarData->Data.Targets.RadarTargets[i].yVelocity +
-		   mpRadarData->Data.Targets.RadarTargets[i].zVelocity * mpRadarData->Data.Targets.RadarTargets[i].zVelocity);
+      RadarTargetResponse_t *target = &mpRadarData->Data.Targets.RadarTargets[i];
+
+      // Same target may sit in different location
+      if (target->targetId != targetID[i])
+      {
+          for (int j=i+1; j < MAX_TARGETS; j++)
+          {
+            // search for the last target
+            if (target->targetId == targetID[j])
+            {
+              d = lastDistance[j];
+              lastDistance[j] = lastDistance[i];
+              lastDistance[i] = d;
+
+              d = maxSpeed[j];
+              maxSpeed[j] = maxSpeed[i];
+              maxSpeed[i] = d;
+
+              targetID[j] = targetID[i];
+              targetID[i] = target->targetId;
+
+              break;
+            }
+
+            // No more search when there is no more targets. This is a new target.
+            if(targetID[j] == 0)
+            {
+                targetID[j] = targetID[i];
+                targetID[i] = target->targetId;
+                maxSpeed[j] = maxSpeed[i];
+                maxSpeed[i] = 0;
+                lastDistance[j] = lastDistance[i];
+                lastDistance[i] = 0;
+
+                break;
+            }
+          }
+      }
+
+    memset( &Radar_Coords[i], 0, sizeof(coord_struct));
+    memset( &Video_Coords[i], 0, sizeof(coord_struct));
+    memset( &Roadway_Coords[i], 0, sizeof(coord_struct));
+
+    Radar_Coords[i].type = radar;
+    Radar_Coords[i].X = target->xCoord;
+    Radar_Coords[i].Y = target->yCoord;
+    // Since the 3D radar does not measure target height (Z axis), fake it
+    //    Radar_Coords.Z = target->zCoord;
+    Radar_Coords[i].Z = mpRadarData->Data.RadarOrientation.targetHeight - mpRadarData->Data.RadarOrientation.radarHeight;  // Usually negative
+
+    Radar_Coords[i].R = sqrtf(target->xCoord * target->xCoord +
+               target->yCoord * target->yCoord +
+               target->zCoord * target->zCoord);
+
+    Radar_Coords[i].Vx = target->xVelocity;
+    Radar_Coords[i].Vy = target->yVelocity;
+    Radar_Coords[i].Vz = target->zVelocity;
+
+    Radar_Coords[i].V = sqrtf(target->xVelocity * target->xVelocity +
+               target->yVelocity * target->yVelocity +
+               target->zVelocity * target->zVelocity);
+
+    // TODO      Radar_Coords[i].Theta_Y = RadarConfig.Theta_hs;
+    // TODO      Radar_Coords[i].Theta_Z = RadarConfig.Theta_vs;
+    Radar_Coords[i].Theta_Vy = 0.0f;
+    Radar_Coords[i].Theta_Vz = 0.0f;
+    Radar_Coords[i].Ix = 0.0f;
+    Radar_Coords[i].Iz = 0.0f;
+
+    Roadway_Coords[i].type = roadway;
+    Video_Coords[i].type = video;
+
+    Transforms.Transform(&Radar_Coords[i], &Roadway_Coords[i]);
+
+    Transforms.Transform(&Roadway_Coords[i], &Video_Coords[i]);
+
+    // We will invalidate targets if the cosine angle is too near 90 degrees (> 80 degrees and <100 degrees) since dividing by
+    // the cosine to get true speed will also magnify speed errors. (80 degrees = 1.396263 radians, 100 degrees = 1.745329 radians)
+
+    float targetAngle = fabsf(atan2f(Roadway_Coords[i].X, Roadway_Coords[i].Y));
+    if((targetAngle > 1.396263f) && (targetAngle < 1.745329f))
+    {
+        printf("Invalidating target %d due to high cos angle at X = %f, Y = %f\n", i, Roadway_Coords[i].X, Roadway_Coords[i].Y);
+    }
+
+    // speed is always positive
+    speed = Roadway_Coords[i].V;
+    if (speed > maxSpeed[i])
+        maxSpeed[i] = speed;
+
+    // Compensate for the delayed picture taken because of the speed
+    if (topView_mConf.direction == 0)
+    {
+        // process those approaching targets only
+        if (Radar_Coords[i].Vy > 0)
+        {
+            lastDistance[i] = Roadway_Coords[i].Y;
+            continue;
+        }
+        threshold = threshold0 + speed /3.6 * averageDelay;
+        takePicture = (lastDistance[i] > threshold) && (Roadway_Coords[i].Y < threshold);
+    }
+    else if (topView_mConf.direction == 1)
+    {
+        // process those receding targets only
+        if (Radar_Coords[i].Vy < 0)
+        {
+            lastDistance[i] = Roadway_Coords[i].Y;
+            continue;
+        }
+        threshold = threshold0 - speed /3.6 * averageDelay;
+        takePicture = (lastDistance[i] < threshold) && (Roadway_Coords[i].Y > threshold);
+    }
+    else
+    {
+        if (Radar_Coords[i].Vy > 0)
+        {
+            threshold = threshold0 - speed /3.6 * averageDelay;
+            takePicture = (lastDistance[i] < threshold) && (Roadway_Coords[i].Y > threshold);
+        }
+        else
+        {
+            threshold = threshold0 + speed /3.6 * averageDelay;
+            takePicture = (lastDistance[i] > threshold) && (Roadway_Coords[i].Y < threshold);
+        }
+    }
+
+    if (takePicture && maxSpeed[i] > mCaptureSpeed)
+    {
+        logDebug << timeStamp << "ms : Target " << target->targetId << " approached picture distance from " \
+                 << lastDistance[i] << "m to " << Roadway_Coords[i].Y << "m at speed " << Roadway_Coords[i].Vy << "km/h, compensated picture distance is " \
+                 << threshold << ", configured picture distance is " << threshold0 << std::endl;
+        DEBUG()  << timeStamp << "ms : Target " << target->targetId << " approached picture distance from " \
+                 << lastDistance[i] << "m to " << Roadway_Coords[i].Y << "m at speed " << Roadway_Coords[i].Vy << "km/h, compensated picture distance is " \
+                 << threshold << ", configured picture distance is " << threshold0 << Roadway_Coords[0].Vy << Roadway_Coords[1].Vy << Roadway_Coords[2].Vy \
+                 << Radar_Coords[0].Vy << Radar_Coords[1].Vy << Radar_Coords[2].Vy;
+    }
+    lastDistance[i] = Roadway_Coords[i].Y;
+
+    // This is where violations are caught,
+    if ((speed >= mCaptureSpeed) && (m_recording == false) && ui->pb_record->isEnabled() && ((autoTrigger == 1) || triggerPulled ))
+    {
+        DEBUG() << "Start record speeding for target " << targetID << ", speed is " << speed << ", speedLimit " << mCaptureSpeed;
+        violation();
+    }
+
+    // take pictures only for those that had violated speeding at least once
+    if (m_recording && takePicture && (maxSpeed[i] > mCaptureSpeed))
+    {
+        Utils& u = Utils::get();
+        base_file_name = u.getRecordingFileName();
+        QString pictureName = base_file_name;
+        //QString pictureName = m_RecordingFile;
+        pictureName.append("-");
+        pictureName.append(QString::number(target->targetId));
+        pictureName.append(".jpg");
+        u.takePhoto(pictureName, Roadway_Coords[i].Y);
+
+        QString targetJSONFile = base_file_name;
+        targetJSONFile.append("-");
+        targetJSONFile.append(QString::number(targetID[i]));
+        targetJSONFile.append(".tkt");
+
+        // Calculate the rectangle coordinates of the target
+        float FOVh = FOVf * Video_Coords[i].R;  // Width of camera horizontal FOV at target distance
+        float fract;
+        if(FOVh > 3.03f)
+          fract = 1.5f / FOVh;  // Fraction of screen width for 3 meter wide box
+        else
+          fract = 0.49f;  // but limit to 99% of screen size
+
+        int hWidth = camWidth * fract;  //Map to screen size, half size of target width
+        int hHeight = camHeight * fract; // half size of target height
+        if(hWidth < 1)
+            hWidth = 1;
+        if(hHeight < 1)
+            hHeight = 1;
+
+        int x0 = (0.5 * Video_Coords->X + 0.5) * (camWidth-1);
+        int y0 = (-0.5 * Video_Coords->Z + 0.5) * (camHeight-1);
+        int targetTop = y0 - hHeight;
+        int targetBottom = y0 + hHeight;
+        int targetLeft = x0 - hWidth;
+        int targetRight = x0 + hWidth;
+
+        QFile json_file(targetJSONFile);
+        json_file.open(QIODevice::WriteOnly | QIODevice::Text);
+        QTextStream json_writer(&json_file);
+
+        int id = u.getEvidenceId();
+        SysConfig & cfg = u.getConfiguration();
+        Location loc1 =u.getCurrentLoc();
+        Session *currentSession = u.session();
+        int units = cfg.units;
+        QString us;
+        float s = 0;
+        double lat = atof( (const char*)u.GPSBuf()->Latitude );
+        double lon = atof( (const char*)u.GPSBuf()->Longitude );
+
+        json_writer << "{\n";
+        json_writer << "  \"id\": " << id <<",\n";
+        json_writer << "  \"stalker-id\": \"" << id <<"\",\n";
+        json_writer << "  \"serial-number\": " << "\"" << cfg.serialNumber << "\"" <<",\n";
+        json_writer << "  \"time-local\": \"" << QDateTime::currentDateTimeUtc().toString( "yyyy-MM-dd hh:mm:ss" ) << "\",\n";
+        json_writer << "  \"time-utc\": \"" << QDateTime::currentDateTimeUtc().toString( "yyyy-MM-dd hh:mm:ss" ) << "\",\n";
+        json_writer << "  \"location\": \"" << loc1.description << "\",\n";
+
+        if (currentSession)
+        {
+           json_writer << "  \"officer\": \"" << currentSession->user()->loginName << "\",\n";
+        }
+
+        json_writer << "  \"units\": {\n";
+        if (units == 1)
+        {
+           us = "km/h";
+           s = maxSpeed[i];
+           json_writer << "    \"speed\": \"km/h\",\n";
+           json_writer << "    \"stalker-speed-units\": \"KM/h\",\n";
+           json_writer << "    \"distance\": \"meter\",\n";
+           json_writer << "    \"stalker-range-units\": \"M\"\n";
+        }
+        else if (units == 2)
+        {
+            us = "knotes";
+            s = maxSpeed[i] * 0.54; // km/h to knot
+           json_writer << "    \"speed\": \"knots\",\n";
+           json_writer << "    \"stalker-speed-units\": \"KNOTS\",\n";
+           json_writer << "    \"distance\": \"feet\",\n";
+           json_writer << "    \"stalker-range-units\": \"FT\"\n";
+        }
+        else
+        {
+            us = "mph";
+            s = maxSpeed[i] * 0.621; // km/h to mph
+           json_writer << "    \"speed\": \"mph\",\n";
+           json_writer << "    \"stalker-speed-units\": \"MPH\",\n";
+           json_writer << "    \"distance\": \"feet\",\n";
+           json_writer << "    \"stalker-range-units\": \"FT\"\n";
+        }
+        json_writer << "  },\n";
+
+        json_writer << "  \"targetId\": \"" << targetID[i] << "\",\n";
+        json_writer << "  \"timeMillieSecs\": \"" << timeStamp << "\",\n";
+        json_writer << "  \"speed-limit\": \"" << speedLimit << "\",\n";
+        json_writer << "  \"speed-max\": \"" << s << "\",\n";
+        //json_writer << "  \"stalker-speed-limit\": \"" << speedLimit << "\",\n";
+        //json_writer << "  \"stalker-speed-actual\": \"" << maxSpeed[i] << "\",\n";
+
+        json_writer << "  \"latitude\": " << lat << ",\n";
+        json_writer << "  \"longitude\": " << lon << ",\n";
+        //json_writer << "  \"stalker-latitude\": \"" << lat << "\",\n";
+        //json_writer << "  \"stalker-longitude\": \"" << lon << "\",\n";
+        json_writer << "  \"stalker-range\": \"" << cfg.pictureDist << "\",\n";
+
+        json_writer << "  \"approaching\": true,\n";
+        json_writer << "  \"violations\": {\n";
+        json_writer << "    \"speeding\": true\n";
+        json_writer << "  },\n";
+        json_writer << "  \"timestamp-local\": 0,\n";
+        json_writer << "  \"timestamp-utc\": 0,\n";
+        json_writer << "  \"targetLeft\": \"" <<targetLeft << "\",\n";
+        json_writer << "  \"targetTop\": \"" <<targetTop << "\",\n";
+        json_writer << "  \"targetRight\": \"" <<targetRight << "\",\n";
+        json_writer << "  \"targetBottom\": \"" <<targetBottom << "\"\n";
+        json_writer << "}\n";
+
+        json_file.close();
+    }
+
     bool inserted = false;
     for(int j = 0; j < num_fastest; j++)
     {
       if(speed > fastest_Speeds[j])
       {
-	// insert new speed
-	int max_index = 3;
-	if(num_fastest < RadarConfig.num_to_show -1) max_index = num_fastest;
-	for(int k = max_index; k > j; k--)
-	{
-	  fastest_Targets[k] = fastest_Targets[k-1];
-	  fastest_Speeds[k] = fastest_Speeds[k-1];
-	}
-	fastest_Targets[j] = i;
-	fastest_Speeds[j] = speed;
-	inserted = true;
-	if(num_fastest < RadarConfig.num_to_show) num_fastest++;
-	break;
+        // insert new speed
+        int max_index = 3;
+        if(num_fastest < RadarConfig.num_to_show -1) max_index = num_fastest;
+        for(int k = max_index; k > j; k--)
+        {
+          fastest_Targets[k] = fastest_Targets[k-1];
+          fastest_Speeds[k] = fastest_Speeds[k-1];
+        }
+        fastest_Targets[j] = i;
+        fastest_Speeds[j] = speed;
+        inserted = true;
+        if(num_fastest < RadarConfig.num_to_show) num_fastest++;
+        break;
       }
     }
     if(! inserted)
@@ -2366,23 +3056,27 @@ if( ptSeen % (3*FRAMESPERSECOND) == 0 ) {
       // Add new speed at end
       if(num_fastest < RadarConfig.num_to_show)
       {
-	fastest_Targets[num_fastest] = i;
-	fastest_Speeds[num_fastest] = speed;
-	if(num_fastest < RadarConfig.num_to_show) num_fastest++;
+        fastest_Targets[num_fastest] = i;
+        fastest_Speeds[num_fastest] = speed;
+        if(num_fastest < RadarConfig.num_to_show) num_fastest++;
       }
     }
+
   }
-  
-  //    printf("num_fastest = %d, numTargets = %d\n", num_fastest, mpRadarData->Data.Targets.numTargets);
-  //    for(int j = 0; j < num_fastest; j++)
-  //    {
-  //    printf("  Fastest speed %d: Speed = %f, index = %i\n", j, fastest_Speeds[j], fastest_Targets[j]);
-  //    }
-  
-  
+
+  // clear those deprecated targets
+  for (int i = mpRadarData->Data.Targets.numTargets + 1; i < MAX_TARGETS; i++)
+  {
+      if (targetID[i])
+          targetID[i] = 0;
+      else
+          break;
+  }
+    
   for(int i = RadarConfig.num_to_show - 1; i >= 0; i--)  // Iterate backwards so fastest targets are drawn last
   {
-    showTheTarget(i, fastest_Targets[i]);
+    int j = fastest_Targets[i];
+    showTheTarget(i, j, &Video_Coords[j]);
   }
   
   // For some reason, I don't need to call the following function.
@@ -2390,64 +3084,20 @@ if( ptSeen % (3*FRAMESPERSECOND) == 0 ) {
   return;
 }
 
-void topView::showTheTarget(int showNum, int targetNum)
+void topView::showTheTarget(int showNum, int targetNum, coord_struct * Video_Coords)
 {
     if(targetNum >=0)
     {
-      coord_struct Radar_Coords;
-      coord_struct Video_Coords[MAX_TARGETS];
-      coord_struct Roadway_Coords;
-      RadarTargetResponse_t *target = &mpRadarData->Data.Targets.RadarTargets[targetNum];
+//      coord_struct Radar_Coords;
+//      coord_struct Video_Coords[MAX_TARGETS];
+//      coord_struct Roadway_Coords;
       
-      memset( &Radar_Coords, 0, sizeof(coord_struct));
-      memset( &Video_Coords, 0, sizeof(coord_struct));
-      memset( &Roadway_Coords, 0, sizeof(coord_struct));
-	      
-      Radar_Coords.type = radar;
-      Radar_Coords.X = target->xCoord;
-      Radar_Coords.Y = target->yCoord;
-      // Since the 3D radar does not measure target height (Z axis), fake it
-      //    Radar_Coords.Z = target->zCoord;
-      Radar_Coords.Z = mpRadarData->Data.RadarOrientation.targetHeight - mpRadarData->Data.RadarOrientation.radarHeight;  // Usually negative
-      
-      Radar_Coords.R = sqrtf(target->xCoord * target->xCoord +
-			     target->yCoord * target->yCoord +
-			     target->zCoord * target->zCoord);
-      
-      //      Radar_Coords.Vx = target->xVelocity;
-      Radar_Coords.Vy = target->yVelocity;
-      Radar_Coords.Vz = target->zVelocity;
-      
-      Radar_Coords.V = sqrtf(target->xVelocity * target->xVelocity +
-			     target->yVelocity * target->yVelocity +
-			     target->zVelocity * target->zVelocity);
-      
-      // TODO      Radar_Coords.Theta_Y = RadarConfig.Theta_hs;
-      // TODO      Radar_Coords.Theta_Z = RadarConfig.Theta_vs;
-      Radar_Coords.Theta_Vy = 0.0f;
-      Radar_Coords.Theta_Vz = 0.0f;
-      Radar_Coords.Ix = 0.0f;
-      Radar_Coords.Iz = 0.0f;
-      
-      Roadway_Coords.type = roadway;
-      Video_Coords[targetNum].type = video;
-      
-      Transforms.Transform(&Radar_Coords, &Roadway_Coords);
-      // printf("Target %d at radar X = %f, Y = %f, Z = %f\n", targetNum, Radar_Coords.X, Radar_Coords.Y, Radar_Coords.Z);
-      // printf("  maps to roadway X = %f, Y = %f, Z = %f\n", Roadway_Coords.X, Roadway_Coords.Y, Roadway_Coords.Z);
-      
-      Transforms.Transform(&Radar_Coords, &Video_Coords[targetNum]);
-      
-      // printf("Got target %d at speed = %f, distance = %f for target %d in showTheTarget()\n", showNum, Radar_Coords.V, Radar_Coords.R, targetNum);
-      // printf("Target %d maps to video X = %f, Z = %f\n Ix = %f, Iz = %f\n", targetNum, Video_Coords[targetNum].X, Video_Coords[targetNum].Z,
-      //      Video_Coords[targetNum].Ix, Video_Coords[targetNum].Iz);
-      
-      float FOVh = 2.0f * tanf(RadarConfig.FOVh * PI/360.0f) * Radar_Coords.R;  // Width of camera horizontal FOV at target distance
+      float FOVh = 2.0f * tanf(RadarConfig.FOVh * PI/360.0f) * Video_Coords->R;  // Width of camera horizontal FOV at target distance
       float fract;
       if(FOVh > 3.03f) {
-	fract = 3.0f / FOVh;  // Fraction of screen width for 3 meter wide box
+        fract = 3.0f / FOVh;  // Fraction of screen width for 3 meter wide box
       } else {
-	fract = 0.99f;                    // but limit to 99% of screen size
+        fract = 0.99f;                    // but limit to 99% of screen size
       }
       
       Q_ASSERT(m_oprScene && m_oprFrames);
@@ -2457,29 +3107,54 @@ void topView::showTheTarget(int showNum, int targetNum)
       int rHeight = camHeight * fract;
       if(rWidth < 1) rWidth = 1;
       if(rHeight < 1) rHeight = 1;
-      //    int centerX = m_topScene->width() / 2;
-      //    int centerY = m_topScene->height() / 2;
 
-      int centerX = (0.5 * Video_Coords[targetNum].X + 0.5) * (camWidth-1);
-      int centerY = (-0.5 * Video_Coords[targetNum].Z + 0.5) * (camHeight-1);
+      int centerX = (0.5 * Video_Coords->X + 0.5) * (camWidth-1);
+      int centerY = (-0.5 * Video_Coords->Z + 0.5) * (camHeight-1);
       
- #ifdef CAPTURE_TEXT
-      if (capture_file_is_open)
-      {
-	fprintf(capture_fd, "  Target %d: Speed = %7.1f Distance = %7.1f\n", showNum, Radar_Coords.V, Radar_Coords.R);
-      }
-#endif
       // speed and distance strings
       char speedsArray[10], distancesArray[10];
       memset(speedsArray, 0, 10);
       memset(distancesArray, 0,10);
       
-      // Speed Need unit and decimal place info here also
-      sprintf(speedsArray,"%3.0f km/h", Radar_Coords.V);
-      QString speedsString = QString(speedsArray);
+      // based on units and speedTenths and rangeTenths      // Speed Need unit and decimal place info here also
+      switch( topView_mConf.units ) {
+      case 0: // MPH
+      case 2: // KNOTS
+	{
+	  float speed = Video_Coords->V / 1.609344 ;
+	  float dst = Video_Coords->R  * 3.28084;
+	  if( topView_mConf.speedTenths == 0 ) {
+	    sprintf(speedsArray,"%3.0f MPH", speed);
+	  }else{
+	    sprintf(speedsArray,"%4.1f MPH", speed);
+	  }
+	  if( topView_mConf.rangeTenths == 0 ) {
+	    sprintf(distancesArray,"%3.0f FT", dst);
+	  }else{
+	    sprintf(distancesArray,"%4.1f FT", dst);
+	  }
+	}
+	break;
+	case 1: // km/h
+	if( topView_mConf.speedTenths == 0 ) {
+      sprintf(speedsArray,"%3.0f km/h", Video_Coords->V);
+	}else{
+      sprintf(speedsArray,"%4.1f km/h", Video_Coords->V);
+	}
+	if( topView_mConf.rangeTenths == 0 ) {
+      sprintf(distancesArray,"%3.0f m", Video_Coords->R);
+	}else{
+      sprintf(distancesArray,"%4.1f m", Video_Coords->R);
+	}
+	break;
+      default:
+	break;
+      }
+
       
       // Distance
-      sprintf(distancesArray,"%4.1f m", Radar_Coords.R);
+
+      QString speedsString = QString(speedsArray);
       QString distancesString = QString(distancesArray);
       
       if(showNum == 0)
@@ -2591,45 +3266,51 @@ void topView::showTheTarget(int showNum, int targetNum)
 }
 #endif
 
+void topView::PlaybackExit()
+{
+    #ifdef IS_TI_ARM
+    Utils& u = Utils::get();
+    int retv = u.sendCmdToCamera(CMD_STOPPLAY, NULL);
+    if(retv) DEBUG() << "Error: Stop Play, ret " << retv;
+    u.sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
+    #endif
+
+    if(m_oprFrames)
+    {
+        m_oprFrames->hide();
+        DEBUG() << "turn off operatFrame";
+    }
+
+    if(m_playbackScreen)
+    {
+        openMenuScreen(); //resume top view
+        m_playbackScreen = false;
+    }
+}
+
 #define DEFAULT_VEDIO_PATH  "/mnt/mmc/ipnc"
 #define DEFAULT_FILTER      QDir::AllEntries
 
 void topView::displayJPG()
 {
 
-  Utils& u = Utils::get();
-  u.sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
+ Utils::get().sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
 
-  backGround& bg = backGround::get();
-  
-  // Temp test code 
-  // called with the base ref values, current values
-  // all data from the radar
-  // float   theta_vs_ref, theta_rs_ref, theta_hs_ref
-  // float   theta_vs, theta_rs, theta_hs
-  // Targets_t *
-  
-  violationTimeStamp = timeStamp;
-  DEBUG() << "elapsed time " << sysTimer.elapsed() << "voilationTimeStamp " << violationTimeStamp;
 
-  bg.saveViolation( violationTimeStamp,
-		    theta_vs_ref, theta_rs_ref, theta_hs_ref, // base from the start
-		    theta_vs,     theta_rs,     theta_hs,     // current values
-		    &mpRadarData->Data.Targets );             // Radar data
-
-  //  hexDump((char *)"metaData", &mpRadarData->Data.Targets, sizeof(Targets_t));
-
-  DEBUG() << "elapsed time " << sysTimer.elapsed();
-  exeRecord();
-  DEBUG() << "elapsed time " << sysTimer.elapsed();
-  //  QString fileName = u.getRecordingFileName() + "_1.jpg";
-  //  DEBUG() << fileName << " m_range " << m_range;
-  //  DEBUG() << "elapsed time " << sysTimer.elapsed();
-  //  u.takePhoto(fileName, m_range);
-  //  DEBUG() << "elapsed time " << sysTimer.elapsed();
-  
-  // End of temp test code
-  
+ if ( iconFrameShow == false ) {
+   //   DEBUG() << "show ";
+   if ( m_iconFrame ) {
+     m_iconFrame->show();
+     iconFrameShow = true;
+   }
+ }else{
+   //   DEBUG() << "hide ";
+   if ( m_iconFrame ) {
+     m_iconFrame->hide();
+     iconFrameShow = false;
+   }
+ }
+ 
 #ifdef JUNK
   // Find the newest file to be display
   // Then possibily print ticket
@@ -2700,6 +3381,8 @@ void topView::displayJPG()
    }
 #endif
 #endif
+
+   return;
 }
 
 //
@@ -2764,7 +3447,7 @@ void* StartRadarPoll(void* radarDataArgs)
 
     // Set up 4 radar data display box
     QColor color;
-    color = QColor(255, 128, 128, 255);
+    color = QColor(255, 150, 148, 255); // QColor(255, 128, 128, 255);
     QPen pen(color);
     menuClass->mP1 = pen;
     menuClass->mP1.setWidth(3);
@@ -2772,11 +3455,11 @@ void* StartRadarPoll(void* radarDataArgs)
     pen.setColor(color);
     menuClass->mP2 = pen;
     menuClass->mP2.setWidth(3);
-    color = QColor(204, 102, 255, 255);
+    color = QColor(216, 216, 255, 255); // QColor(204, 102, 255, 255);
     pen.setColor(color);
     menuClass->mP3 = pen;
     menuClass->mP3.setWidth(3);
-    color = QColor(0, 204, 255, 255);
+    color = QColor(97, 213, 255, 255); // QColor(0, 204, 255, 255);
     pen.setColor(color);
     menuClass->mP4 = pen;
     menuClass->mP4.setWidth(3);
@@ -2830,6 +3513,267 @@ void* StartRadarPoll(void* radarDataArgs)
     return NULL;
 }
 
+float topView::getNumber ( QString file, QString element )
+{
+  QString cmd;
+  QProcess process;
+  
+  float value = 0.0;
+  cmd = QString(" /bin/sh -c \"/bin/grep ");
+  cmd.append(element);
+  cmd.append(" ");
+  cmd.append(file);
+  cmd.append( "\"");
+  
+  //  DEBUG() << cmd;
+
+  process.start( cmd );
+  process.waitForFinished(-1); // will wait forever until finished
+  QString stdout = process.readAllStandardOutput();
+
+  //  DEBUG() << stdout;
+
+  QStringList list = stdout.split('\"');
+  
+  value =  atof(list.at(3).toLocal8Bit().constData());
+
+  //DEBUG() << element << value;
+    
+  return value;
+}
+
+void topView::getData( QString file )
+{
+    //DEBUG() << "getData from json file " << file;
+
+    violationData.theta_vs_ref = getNumber( file, "theta_ref_vs");
+    violationData.theta_rs_ref = getNumber( file, "theta_ref_rs");
+    violationData.theta_hs_ref = getNumber( file, "theta_ref_hs");
+
+    violationData.theta_vs = getNumber( file, "theta_vs");
+    violationData.theta_rs = getNumber( file, "theta_rs");
+    violationData.theta_hs = getNumber( file, "theta_hs");
+
+    violationData.Targets.numTargets = (int)getNumber( file, "numTargets");
+    int i;
+
+    //DEBUG() << MAX_TARGETS << " "  << violationData.Targets.maxTargets << " " << violationData.Targets.numTargets;
+
+    for( i=0; i<violationData.Targets.numTargets; i++ ) {
+      QString num("_");
+      num.append(QString::number(i));
+      violationData.Targets.RadarTargets[i].xCoord = getNumber( file,  QString("xCoord").append(num) );
+      violationData.Targets.RadarTargets[i].yCoord = getNumber( file,  QString("yCoord").append(num) );
+      violationData.Targets.RadarTargets[i].zCoord = getNumber( file,  QString("zCoord").append(num) );
+      violationData.Targets.RadarTargets[i].xVelocity = getNumber( file,  QString("xVelocity").append(num) );
+      violationData.Targets.RadarTargets[i].yVelocity = getNumber( file,  QString("yVelocity").append(num) );
+      violationData.Targets.RadarTargets[i].zVelocity = getNumber( file,  QString("zVelocity").append(num) );
+    }
+}
+
+void* PlaybackThread(void* radarDataArgs)
+{
+    DEBUG() << "playback: " << currentPlaybackFileName;
+
+    state& v = state::get();
+
+    timespec start_time;
+    timespec next_time;
+
+    clock_gettime(CLOCK_MONOTONIC, &start_time);
+    //DEBUG() << "Start time" <<  start_time.tv_sec << start_time.tv_nsec;
+    next_time = start_time;
+
+    topView * menuClass;
+    radarDataArgs_t *pRadarDataArgs = (radarDataArgs_t *)radarDataArgs;
+    menuClass = (topView *)(pRadarDataArgs->menuClass);
+
+    menuClass->json_md_fd = 0; //check if *.json and *md files exist
+
+    int lastPoint = currentPlaybackFileName.lastIndexOf(".");
+    QString fileNameNoExt = currentPlaybackFileName.left(lastPoint);
+    QString jsonFile = fileNameNoExt;
+    jsonFile.append(".json"); //zxm test for simulation
+    QFile filejson(jsonFile);
+
+    QString mdFile = fileNameNoExt;
+    mdFile.append(".md");
+    QFile file(mdFile);
+
+    if(!filejson.open(QIODevice::ReadOnly | QFile::Truncate )) {
+      DEBUG() << "Failed to open json file " << jsonFile;
+      menuClass->json_md_fd = 0;
+    }
+    else
+    {
+        menuClass->json_md_fd++;
+        filejson.close();
+
+        DEBUG() << "mdFile " << mdFile;
+
+        if(!file.open(QIODevice::ReadOnly | QFile::Truncate )) {
+          DEBUG() << "Failed to open metat data file " << mdFile;
+          menuClass->json_md_fd = 0;
+        }else menuClass->json_md_fd++;
+    }
+    CCoordTransforms Transforms;
+
+    if(menuClass->json_md_fd) //zxm get speed & distance and time stamp from meta file
+    {
+        DEBUG() << "getData from json file " << jsonFile;
+        menuClass->getData(jsonFile);
+
+        // Init the coordinate transformations
+        Transforms.InitCoordTransforms(menuClass->RadarConfig.Xs,
+                       menuClass->RadarConfig.Zs,
+                       menuClass->RadarConfig.Zt,
+                       menuClass->RadarConfig.FOVh * PI/180.0f,      // Convert to radians
+                       menuClass->RadarConfig.FOVv * PI/180.0f);     // Convert to radians
+
+        int targetNum;
+        coord_struct Radar_Coords;
+        coord_struct Roadway_Coords;
+
+        int i;
+        char data[sizeof(struct metaDataGet)];
+
+        UINT64 ts1=0, ts2=0, nsec=0;
+        long delta=0, secs=0, msec=0;
+        menuClass->frameCnt=0;
+
+        i=0;
+
+        while(v.getPlaybackState() && i<(FRAMESPERSECOND * MAX_RECORDING_SECS))
+        {
+            memset(data, 0, sizeof(struct metaDataGet));
+
+            file.read((char *)data, sizeof(struct metaDataGet)); //zxm read one record of 1012 bytes
+
+            struct metaDataGet *ptr;
+
+            ptr = (struct metaDataGet *)data;
+
+            menuClass->violationData.timeMillieSecs = ptr->hdr.timeMilliSecs;
+            menuClass->violationData.theta_vs = ptr->hdr.theta_vs;
+            menuClass->violationData.theta_rs = ptr->hdr.theta_rs;
+            menuClass->violationData.theta_hs = ptr->hdr.theta_hs;
+            memcpy( (void *)&menuClass->violationData.Targets, (void *)&ptr->target, sizeof(Targets_t) );
+
+            float theta_hs_rel = menuClass->violationData.theta_hs_ref - menuClass->violationData.theta_hs;
+            if(theta_hs_rel > PI) theta_hs_rel = PI - theta_hs_rel;
+            else if(theta_hs_rel < -PI) theta_hs_rel = PI + theta_hs_rel;
+
+            float theta_rs_rel = menuClass->violationData.theta_rs - menuClass->violationData.theta_rs_ref;
+            if(theta_rs_rel > PI) theta_rs_rel = PI - theta_rs_rel;
+            else if(theta_rs_rel < -PI) theta_rs_rel = PI + theta_rs_rel;
+
+            float theta_vs_rel = menuClass->violationData.theta_vs - menuClass->violationData.theta_vs_ref;
+            if(theta_vs_rel > PI) theta_vs_rel = PI - theta_vs_rel;
+            else if(theta_vs_rel < -PI) theta_vs_rel = PI + theta_vs_rel;
+
+            Transforms.UpdateSensor(theta_vs_rel, theta_rs_rel, theta_hs_rel);
+
+            for( targetNum=0; targetNum < menuClass->violationData.Targets.numTargets; targetNum++ )
+            {
+              RadarTargetResponse_t *target = &menuClass->violationData.Targets.RadarTargets[targetNum];
+
+              memset( &Radar_Coords, 0, sizeof(coord_struct));
+              memset( &menuClass->Video_Coords, 0, sizeof(coord_struct));
+              memset( &Roadway_Coords, 0, sizeof(coord_struct));
+
+              Radar_Coords.type = radar;
+              Radar_Coords.X = target->xCoord;
+              Radar_Coords.Y = target->yCoord;
+              // Since the 3D radar does not measure target height (Z axis), fake it
+              //    Radar_Coords.Z = target->zCoord;
+              //    Radar_Coords.Z = mpRadarData->Data.RadarOrientation.targetHeight - mpRadarData->Data.RadarOrientation.radarHeight;  // Usually negative
+              Radar_Coords.Z = 1.0f - 3.0f;  // Usually negative
+
+              Radar_Coords.R = sqrtf(target->xCoord * target->xCoord +
+                         target->yCoord * target->yCoord +
+                         target->zCoord * target->zCoord);
+
+              Radar_Coords.Vx = target->xVelocity;
+              Radar_Coords.Vy = target->yVelocity;
+              Radar_Coords.Vz = target->zVelocity;
+
+              Radar_Coords.V = sqrtf(target->xVelocity * target->xVelocity +
+                         target->yVelocity * target->yVelocity +
+                         target->zVelocity * target->zVelocity);
+
+              Radar_Coords.Theta_Vy = 0.0f;
+              Radar_Coords.Theta_Vz = 0.0f;
+              Radar_Coords.Ix = 0.0f;
+              Radar_Coords.Iz = 0.0f;
+
+              Roadway_Coords.type = roadway;
+
+              Transforms.Transform(&Radar_Coords, &Roadway_Coords);
+
+              menuClass->Video_Coords[targetNum].type = video;
+              Transforms.Transform(&Radar_Coords, &menuClass->Video_Coords[targetNum]);
+
+                if(i==0)
+                {
+                    ts1 = menuClass->violationData.timeMillieSecs;
+                    ts2 = ts1;
+                }
+
+                delta = menuClass->violationData.timeMillieSecs - ts2;
+
+                if(delta)
+                {
+                    menuClass->frameCnt++;
+                    //DEBUG() <<  "read frame" << menuClass->frameCnt << "delta" << delta << "ms";
+                    ts2 = menuClass->violationData.timeMillieSecs;
+                    if(delta>200) delta = 67; //cut short long delay
+                    nsec = next_time.tv_nsec + delta*1000000;
+                    secs = nsec/1000000000;
+                    next_time.tv_sec += secs;
+                    if (secs) next_time.tv_nsec = (nsec - secs*1000000000);
+                    else next_time.tv_nsec = nsec;
+                    clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next_time, NULL);
+                }
+            }
+            i++;
+        }//end of while loop for next read (each read gets four targets data)
+
+        secs = (ts2-ts1)/1000;
+        msec = (ts2-ts1) - secs*1000;
+        DEBUG() <<  "total time elapsed" << secs << "s" << msec << "ms";
+
+        file.close();
+    }
+    else //when json and *.md files not exist
+    {
+        UINT64 delta_t_ns = 66666667;  // 1/15 second
+        int frame=1;
+
+        while(v.getPlaybackState() && frame < 300) //timeout at 20s, 60*15=900 for 60s
+        {
+            UINT64 frac = frame * delta_t_ns;
+            frac = frac + start_time.tv_nsec;
+            long secs = frac/1000000000;
+            frac = frac - secs * 1000000000;
+            next_time.tv_sec = start_time.tv_sec + secs;
+            next_time.tv_nsec = frac;
+            frame++;
+        #ifndef IS_TI_ARM //run on ubuntu
+            //DEBUG() << "frame " << frame << "time "<<  secs << "s" << frac/1000000 << "ms";
+        #endif
+            clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &next_time, NULL); //this line will hold/wait processing
+        }//end of while
+
+        #ifndef IS_TI_ARM //run on ubuntu
+            DEBUG() << "playbackThread exit @ frame " << frame;
+            DEBUG() << "playbackThread time = " << (next_time.tv_sec - start_time.tv_sec);
+        #endif
+    }
+
+    v.setPlaybackState(0); //end playback
+    pthread_exit(NULL);
+    return NULL;
+}
 
 //
 //private slots
@@ -2843,11 +3787,189 @@ void topView::initProcesses()
 
 void topView::powerDownSystem( void)
 {
-
   Utils& u = Utils::get();
   u.sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
   // msgbox
-  QString quest_str = QString("System Powering Down");
+  QString quest_str = QString("System Powering Down Continue?");
+  QMessageBox msgBox;
+  msgBox.setText(QObject::tr(quest_str.toStdString().c_str()));
+  msgBox.setStandardButtons(QMessageBox::Yes | QMessageBox::No);
+  msgBox.setDefaultButton(QMessageBox::Yes);
+  msgBox.setIcon(QMessageBox::Warning);
+  QPalette p;
+  p.setColor(QPalette::Window, Qt::red);
+  msgBox.setPalette(p);
+  if(msgBox.exec() == QMessageBox::No){
+    return;
+  } 
+
+  u.sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
+  
+  system( "/sbin/halt -p");
+  // Should never return here, 
+  return;
+}
+
+#ifdef LIDARCAM
+void topView::lidarCamTriggerPulled()
+{
+#ifndef SPEED_INROOM_DEBUG
+  // Normal operation
+  m_newRange = u.lidarRange();
+  mNewSpeed = u.lidarSpeed();
+#else
+  // In room
+  mNewSpeed = 41.5;
+  m_newRange -= 10;
+#endif
+  
+  //DISPLAY the radar distance and range
+  // DEBUG()  << " m_range " << m_range << " m_newRange " << m_newRange;
+  if ( m_distance )
+  {
+    m_topScene->removeItem( m_distance);
+    delete m_distance;
+    m_distance = NULL;
+  }
+  
+  if ( m_range != m_newRange )
+  {
+    m_range = m_newRange;
+    displayRange( m_range );
+  }
+  
+  //display the radar speed
+  // need to determine if this is km/h or mph
+  if (mRangeOnly == false &&  mSpeed != mNewSpeed )
+  {
+    mSpeed = mNewSpeed;
+    if( m_speed )
+    {
+      m_topScene->removeItem(m_speed);
+      delete m_speed;
+      m_speed = NULL;
+    }
+    switch( u.lidarDataBuf()->lidarStruct.DISPLAY_UNITS )
+    {
+    case 0: // MPH
+      if ((mSpeed > 6.0) || (mSpeed < -6.0) )
+	displaySpeed( mSpeed );
+      break;
+    case 1: // km/h
+      if ((mSpeed > 10.0) || (mSpeed < -10.0) )
+	displaySpeed( mSpeed );
+      break;
+    default:
+      break;
+    }
+  }
+  
+  setRecordingText();  // Set Watermark
+  if ((m_recording == false) && (ui->pb_record->isEnabled() == true))
+  {
+    // Monitor the Speed, start recording if needed
+    monitorSpeed();
+  }
+}
+
+void topView::lidarCamTriggerNotPulled()
+{
+  if (mAutoRecording == true)
+  {  // Auto recording is still on
+    exeRecord();   // Stop it
+    mAutoRecording = false;
+  }
+  return;
+}
+#endif //LIDARCAM
+
+#ifdef HH1
+void topView::hh1TriggerPulled( void )
+{
+  // connected to hh1Trigger and will be activated from hardbuttons.cpp via emit
+  int ss = state::get().getState(); 
+
+  //  DEBUG() << "State " << ss;
+
+  switch ( ss ) {
+  case STATE_START:
+  case STATE_TOP_VIEW:
+  case STATE_OPERATING:
+    break;
+    // trigger is ignored for all other states
+  default:
+    return;
+  }
+  
+  // Make sure trigger does not stop current violation
+  if ((m_recording == false) && (ui->pb_record->isEnabled() == true)) {
+    if ( ss == STATE_OPERATING ) {
+      // if in the "START" screen it is a violation
+      violation();
+    }else{
+      // STATE_TOP_VIEW
+      // trigger means START
+      openOperateScreen();
+    }
+  }
+  return;
+}
+
+#ifdef NOTUSEDNOW
+void topView::hh1TriggerNotPulled( void )
+{
+  return;
+}
+#endif // NOTUSEDNOW
+#endif //HH1
+
+void topView::violation( void )
+{
+  violationTimeStamp = timeStamp;
+
+  backGround::get().saveViolation( violationTimeStamp,
+				   theta_vs_ref, theta_rs_ref, theta_hs_ref, // base from the start
+				   theta_vs,     theta_rs,     theta_hs,     // current values
+				   RadarConfig.Xs,
+                                   RadarConfig.Zs,
+                                   RadarConfig.Zt,
+                                   RadarConfig.FocalLength,
+				   &mpRadarData->Data.Targets );             // Radar data
+
+  //  hexDump((char *)"metaData", &mpRadarData->Data.Targets, sizeof(Targets_t));
+
+  exeRecord();
+
+  //QTextStream logDebug(logFile);
+  logDebug << "Start recording: ";
+
+  float x,y,z,r;
+  for (int i = 0; i < 4; i++)
+  {
+        if (i >= mpRadarData->Data.Targets.numTargets)
+            continue;
+
+        x = mpRadarData->Data.Targets.RadarTargets[i].xCoord;
+        y = mpRadarData->Data.Targets.RadarTargets[i].yCoord;
+        z = mpRadarData->Data.RadarOrientation.targetHeight - mpRadarData->Data.RadarOrientation.radarHeight;  // Usually negative
+        r = sqrtf(x*x + y*y + z*z);
+
+        logDebug << timeStamp << " : target " << mpRadarData->Data.Targets.RadarTargets[i].targetId << " is at " << r << "m; ";
+        DEBUG()  << timeStamp << " : target " << mpRadarData->Data.Targets.RadarTargets[i].targetId << " is at " << r << "m";
+        lastDistance[i] = 0;  // important to clear it to 0 here
+        maxSpeed[i] = 0; // clear the max speed of the targets
+  }
+  logDebug << std::endl << std::flush;
+  return;
+}
+
+void topView::lowBattery( void )
+{
+  DEBUG();
+  Utils& u = Utils::get();
+  u.sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
+  // msgbox
+  QString quest_str = QString("Please Replace Battery");
   QMessageBox msgBox;
   msgBox.setText(QObject::tr(quest_str.toStdString().c_str()));
   msgBox.setStandardButtons(QMessageBox::Ok);
@@ -2860,7 +3982,5 @@ void topView::powerDownSystem( void)
   
   u.sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
 
-  system( "/sbin/halt -p");
-  // Should never return here, 
   return;
 }

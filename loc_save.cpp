@@ -70,8 +70,9 @@ void locSave::toggleValue(int, int, int )
         l.description = m_locs[row].description;
         l.speedLimit = m_locs[row].speedLimit;
         l.captureSpeed = m_locs[row].captureSpeed;
+        l.captureDistance = m_locs[row].captureDistance;
         l.roadCondition = m_locs[row].roadCondition;
-        l.numberLanes = m_locs[row].numberLanes;
+        l.numberOfLanes = m_locs[row].numberOfLanes;
         u.setTransitData(CMD_LOC_LOAD, (DBStruct *)&l);
         u.getExitButton()->clicked();   // Clicked 'Exit' button
     }
@@ -101,12 +102,19 @@ void locSave::toggleValue(int, int, int )
             qCritical() << "Capture speed cannot be empty";
             return;
         }
+        else if (l.captureDistance.isNull() || l.captureDistance.isEmpty())
+
+        {
+            qCritical() << " loc_save L109  l.capDist=" << l.captureDistance;
+            qCritical() << "Capture Distance cannot be empty";
+           //return;
+        }
         else if (l.roadCondition.isNull() || l.roadCondition.isEmpty())
         {
             qCritical() << "Road Condition cannot be empty";
             return;
         }
-        else if (!l.numberLanes)
+        else if (!l.numberOfLanes)
         {
             qCritical() << "Number of Lanes cannot be 0";
             return;
@@ -119,25 +127,32 @@ void locSave::toggleValue(int, int, int )
             m_backupLoc.description = m_locs[row].description;
             m_backupLoc.speedLimit = m_locs[row].speedLimit;
             m_backupLoc.captureSpeed = m_locs[row].captureSpeed;
+            m_backupLoc.captureDistance = m_locs[row].captureDistance;
             m_backupLoc.roadCondition = m_locs[row].roadCondition;
-            m_backupLoc.numberLanes = m_locs[row].numberLanes;
+            m_backupLoc.numberOfLanes = m_locs[row].numberOfLanes;
         }
         m_backupTransitLoc.index = row + 1;
         m_backupTransitLoc.description = l.description;
         m_backupTransitLoc.speedLimit = l.speedLimit;
         m_backupTransitLoc.captureSpeed = l.captureSpeed;
+        m_backupTransitLoc.captureDistance = l.captureDistance;
+        qCritical() <<"Loc save L140 l.captureDistance" << l.captureDistance;
         m_backupTransitLoc.roadCondition = l.roadCondition;
-        m_backupTransitLoc.numberLanes = l.numberLanes;
+        m_backupTransitLoc.numberOfLanes = l.numberOfLanes;
 
         qDebug() << l.description;
 
         //update database and refresh display
         l.index = row + 1;
+        qCritical() <<"Loc_save L148 index "<< l.index;
         if (m_locs[row].index)
-            retv = u.db()->updateEntry(TBL_LOCATION, (DBStruct *)&l);
+           retv = u.db()->updateEntry(TBL_LOCATION, (DBStruct *)&l);
+
         else
-            retv = u.db()->addEntry(TBL_LOCATION, (DBStruct *)&l);
+           retv = u.db()->addEntry(TBL_LOCATION, (DBStruct *)&l);
+
         if (retv) {
+
             qCritical() << "update location entry failed (" << l.description << ")";
         }
         this->loadLocsFromDB();  //update the list
@@ -183,8 +198,9 @@ int locSave::loadLocsFromDB()
             m_locs[l.index-1].description = l.description;
             m_locs[l.index-1].speedLimit = l.speedLimit;
             m_locs[l.index-1].captureSpeed = l.captureSpeed;
+            m_locs[l.index-1].captureDistance = l.captureDistance;
             m_locs[l.index-1].roadCondition = l.roadCondition;
-            m_locs[l.index-1].numberLanes = l.numberLanes;
+            m_locs[l.index-1].numberOfLanes = l.numberOfLanes;
         }
     }
 

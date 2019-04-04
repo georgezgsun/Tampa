@@ -156,15 +156,21 @@ void hardButtons::ProcessHardButtons(struct input_event& ev)
   if( mInputKey == (unsigned char)SWV1)
   {
     mInputKey = 0;
-    if( mEnabled == true && map[0] != NULL )
+    if( mEnabled == true && map[0] != NULL ){
       map[0]->clicked();
+    }else{
+      emit tv->hh1Home();
+    }
     return;
   }
   if ( mInputKey == (unsigned char)SWV2)
   {
     mInputKey = 0;
-    if( mEnabled == true && map[1] != NULL )
+    if( mEnabled == true && map[1] != NULL ) {
       map[1]->clicked();
+    }else{
+      emit tv->hh1Home();
+    }
     return;
   }
   if ( mInputKey == (unsigned char )SWV3)
@@ -179,6 +185,8 @@ void hardButtons::ProcessHardButtons(struct input_event& ev)
             vkILine *pKeyBoard = (vkILine *)map[2];
             pKeyBoard->linePressed(pKeyBoard);
         }
+    }else{
+      emit tv->hh1Home();
     }
 	return;
   }
@@ -186,8 +194,11 @@ void hardButtons::ProcessHardButtons(struct input_event& ev)
   if ( mInputKey == (unsigned char)SWV4)
   {
     mInputKey = 0;
-    if( mEnabled == true && map[3] != NULL )
+    if( mEnabled == true && map[3] != NULL ){
       map[3]->clicked();
+    }else{
+      emit tv->hh1Home();
+    }
     return;
   }
 
@@ -277,7 +288,7 @@ void hardButtons::ProcessHardButtons(struct input_event& ev)
   if(mInputKey == (unsigned char)SWH3)
   {
     mInputKey = 0;
-    DEBUG() << "SWH3 Pressed\r\n";
+    //    DEBUG() << "SWH3 Pressed\r\n";
 
 #ifdef LIDARCAM
     // Increase the audio volume
@@ -287,7 +298,53 @@ void hardButtons::ProcessHardButtons(struct input_event& ev)
     {
         Set_Audio_Volume(data->lidarStruct.SPEAKER_VOLUME + 1);
     }
+#else
+    //    DEBUG() << "HH1 Brightness";
+    // for HH1 this controls the brightness of the screen
+    
+    int brightness;
+    
+    // Get brightness from the database
+    SysConfig & cfg = u.getConfiguration();
+    brightness = cfg.brightness;
+    
+    // Increment it, if greater than 4 set to 0
+    brightness++;
+    
+    if ( brightness > 3 ) {
+      brightness = 0;
+    }
+    
+    cfg.brightness = brightness;
+    u.setConfiguration( cfg);
+    
+    QString cmd;
+    
+    switch ( brightness ) {
+    case 0:
+      cmd = QString("9");
+    break;
+    case 1:
+      cmd = QString("6");
+      break;
+    case 2:
+      cmd = QString("3");
+      break;
+    case 3:
+      cmd = QString("0");
+      break;
+    default:
+      break;
+    }
+    
+    const QString qPath("/sys/kernel/timerPWM/PWM");
+    QFile qFile(qPath);
+    if (qFile.open(QIODevice::WriteOnly)) {
+      QTextStream out(&qFile); out << cmd;
+      qFile.close();
+    }
 #endif
+    
     Send_Audio_Beep();
     return;
   }
@@ -303,6 +360,12 @@ void hardButtons::ProcessHardButtons(struct input_event& ev)
     if(data->lidarStruct.SPEAKER_VOLUME > 0)
     {
         Set_Audio_Volume(data->lidarStruct.SPEAKER_VOLUME - 1);
+    }
+#else
+    if ( state::get().getState() == STATE_LOGIN) {
+      // ignore if in the STATE_START
+    }else{
+      emit tv->hh1Home();
     }
 #endif
     Send_Audio_Beep();
@@ -346,6 +409,7 @@ void hardButtons::ProcessHardButtons(struct input_event& ev)
     dm355_gio_write(61, 1);
 #endif
     triggerPulled = true;
+    emit tv->hh1Trigger();
     return;
   }
 
@@ -362,6 +426,7 @@ void hardButtons::setHardButtonMap( int i, QPushButton * s )
   map[i] = s;
 }
 
+#ifdef LIDARCAM
 void hardButtons::Send_Display_Brightness( int Brightness )
 {
   struct Message_Queue_Buff Message_Buffer;
@@ -391,6 +456,7 @@ void hardButtons::Send_Display_Brightness( int Brightness )
   if(result < 0)
     printf("Set Display Brightness FAILED\r\n");
 }
+#endif
 
 void hardButtons::Send_Audio_Beep()
 {

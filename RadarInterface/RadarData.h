@@ -2,7 +2,7 @@
 
 #include <pthread.h>
 
-#define BIN_CAPTURE_FILE "/mnt/mmc/ipnc/capture_data.bin"
+//#define BIN_CAPTURE_FILE "/mnt/mmc/ipnc/capture_data.bin"
 //#define CAPTURE_BIN
 
 // This class encapsulates all communications with the Oculii radar sensor and
@@ -53,10 +53,10 @@ public:
     CaptureFunction pCapture;
     PlaybackFunction pPlayback;
     TrashBinFunction pTrashbin;
-    bool portIsOpen;
+    volatile bool portIsOpen;
     int responseStatus;
     CSerial SerialPort;
-    state_type messageState;
+    volatile state_type messageState;
 
 // RadarData members:
 	int CheckResponse();

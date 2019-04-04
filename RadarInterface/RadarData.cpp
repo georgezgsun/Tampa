@@ -271,7 +271,7 @@ UINT32 CRadarData::RunRadarDataStateMachine(config_type * pConfigArg)
     SetDevice(pConfig->port);
     if(!portIsOpen)
     {
-        UINT status;
+        UINT status=0;
         if(pConfig->port == serial)
             status = OpenPort(pConfig->serialPortDev, pConfig->serialBaudRate);
         if(status)

@@ -17,7 +17,6 @@ public:
     ~playBack();
 
     void startPlay(void);
-    void displayPhoto(void);
     void setFileName(QString &filename);
 
 private slots:

@@ -268,13 +268,15 @@ void baseMenu::toggleValue(int cmd, int index, int flag)
 {
     QLineEdit *le = NULL;
     QLabel *lb = NULL;
-
-    if (!flag)
+    QPushButton *pb =NULL;
+    if (flag == 0)
         le = qobject_cast<QLineEdit *>(m_list.at(index));
-    else
+    else if (flag == 1)
         lb = qobject_cast<QLabel *>(m_list.at(index));
+    else
+        pb= qobject_cast<QPushButton *>(m_list.at(index));
 
-    if (!le && !lb) {
+    if (!le && !lb && !pb) {
 	  QString cmdHex= QString("%1").arg(cmd , 0, 16);
 	  DEBUG() << "toggle for NULL object cmd = " <<  cmdHex << "index = " << index;
 	  return;
@@ -286,10 +288,16 @@ void baseMenu::toggleValue(int cmd, int index, int flag)
     *i = j;
 
     QString s = l->at(j);
-    if (!flag)
+    if (flag == 0)
         le->setText(s);
-    else
+    else if (flag == 1)
         lb->setText(s);
+    else
+        pb->setText(s);
+
+    if(cmd == CMD_MODE || cmd == CMD_SHUTTER || cmd ==CMD_GAIN || cmd == CMD_EV )
+        Utils::get().sendCmdToCamera(cmd, j);
+
 }
 
 void baseMenu::buildWIHashTable()

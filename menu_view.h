@@ -45,7 +45,7 @@ private:
 
 protected:
     void closeEvent(QCloseEvent *);
-
+    void tb_logout_clicked();
 signals:
     void closeMenuView();
 
@@ -58,6 +58,8 @@ public slots:
 
     void selectPressed();
     void exitPressed();
+    void playbackAvi();
+    void gotoFileMgr();
 
     void setSelectButton(bool b);  //eneble / diable the SELECT button, requested by sub-menus
 

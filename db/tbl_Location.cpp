@@ -7,8 +7,9 @@ int userDB::Loc_createTbl()
                  "Description TEXT NOT NULL, "
                  "SpeedLimit TEXT NOT NULL, "
                  "CaptureSpeed TEXT NOT NULL, "
+                 "CaptureDistance TEXT NOT NULL, "
                  "RoadCondition TEXT, "
-                 "NumOfLanes NUMERIC)";
+                 "NumberOfLanes NUMERIC)";
 
 
     QSqlQuery query(m_db);
@@ -24,15 +25,16 @@ int userDB::Loc_createTbl()
 int userDB::Loc_addEntry(Location *l)
 {
     m_query->prepare("INSERT INTO Location "
-                     "(LocIndex,  Description,  SpeedLimit,  CaptureSpeed,  RoadCondition,  NumOfLanes) "
-             "VALUES (:LocIndex, :Description, :SpeedLimit, :CaptureSpeed, :RoadCondition, :NumOfLanes)");
+                     "(LocIndex,  Description,  SpeedLimit,  CaptureSpeed, CaptureDistance, RoadCondition,  NumberOfLanes) "
+             "VALUES (:LocIndex, :Description, :SpeedLimit, :CaptureSpeed, :CaptureDistance, :RoadCondition, :NumberOfLanes)");
 
     m_query->bindValue(":LocIndex", l->index);
     m_query->bindValue(":Description", l->description);
     m_query->bindValue(":SpeedLimit", l->speedLimit);
     m_query->bindValue(":CaptureSpeed", l->captureSpeed);
+    m_query->bindValue(":CaptureDistance", l->captureDistance);
     m_query->bindValue(":RoadCondition", l->roadCondition);
-    m_query->bindValue(":NumOfLanes", l->numberLanes);
+    m_query->bindValue(":NumberOfLanes", l->numberOfLanes);
 
     if (!m_query->exec()) {
         qDebug() << m_query->lastError();
@@ -60,12 +62,13 @@ int userDB::Loc_delEntry(Location *l, DB_QUERY_FLAG flag)
     return 0;
 }
 
-#define LOCATION_INDEX          0x1
-#define LOCATION_DESCRIPTION    0x2
-#define LOCATION_SPEED_LIMIT    0x4
-#define LOCATION_CAPTURE_SPEED  0x8
-#define LOCATION_ROAD_CONDITION 0x10
-#define LOCATION_NUM_OF_LANES   0x20
+#define LOCATION_INDEX             0x1
+#define LOCATION_DESCRIPTION       0x2
+#define LOCATION_SPEED_LIMIT       0x4
+#define LOCATION_CAPTURE_SPEED     0x8
+#define LOCATION_CAPTURE_DISTANCE  0x10
+#define LOCATION_ROAD_CONDITION    0x20
+#define LOCATION_NUMBER_OF_LANES   0x40
 
 
 int userDB::Loc_query(Location *l, DB_QUERY_FLAG flag)
@@ -110,6 +113,13 @@ int userDB::Loc_query(Location *l, DB_QUERY_FLAG flag)
                 s = s + " CaptureSpeed = (:CaptureSpeed)";
             fields |= LOCATION_CAPTURE_SPEED;
         }
+        if (l->captureDistance.isEmpty() == false) {
+            if (fields)
+                s = s + " AND CaptureDistance = (:CaptureDistance)";
+            else
+                s = s + " CaptureDistance = (:CaptureDistance)";
+            fields |= LOCATION_CAPTURE_DISTANCE;
+        }
         if (l->roadCondition.isEmpty() == false) {
             if (fields)
                 s = s + " AND RoadCondition = (:RoadCondition)";
@@ -117,12 +127,12 @@ int userDB::Loc_query(Location *l, DB_QUERY_FLAG flag)
                 s = s + " RoadCondition = (:RoadCondition)";
             fields |= LOCATION_ROAD_CONDITION;
         }
-        if (l->numberLanes > 0) {
+        if (l->numberOfLanes > 0) {
             if (fields)
-                s = s + " AND NumOfLanes = (:NumOfLanes)";
+                s = s + " AND NumberOfLanes = (:NumberOfLanes)";
             else
-                s = s + " NumOfLanes = (:NumOfLanes)";
-            fields |= LOCATION_NUM_OF_LANES;
+                s = s + " NumberOfLanes = (:NumberOfLanes)";
+            fields |= LOCATION_NUMBER_OF_LANES;
         }
     }
     else {      //ERROR
@@ -140,10 +150,12 @@ exec:
             m_query->bindValue(":SpeedLimit", l->speedLimit);
         if (fields & LOCATION_CAPTURE_SPEED)
             m_query->bindValue(":CaptureSpeed", l->captureSpeed);
+        if (fields & LOCATION_CAPTURE_DISTANCE)
+            m_query->bindValue(":CaptureDistance", l->captureDistance);
         if (fields & LOCATION_ROAD_CONDITION)
             m_query->bindValue(":RoadCondition", l->roadCondition);
-        if (fields & LOCATION_NUM_OF_LANES)
-            m_query->bindValue(":NumOfLanes", l->numberLanes);
+        if (fields & LOCATION_NUMBER_OF_LANES)
+            m_query->bindValue(":NumberOfLanes", l->numberOfLanes);
     }
 
     if (!m_query->exec()) {
@@ -180,8 +192,9 @@ int userDB::Loc_getNextEntry(Location *l)
         l->description = m_query->value(m_query->record().indexOf("Description")).toString();
         l->speedLimit = m_query->value(m_query->record().indexOf("SpeedLimit")).toString();
         l->captureSpeed = m_query->value(m_query->record().indexOf("CaptureSpeed")).toString();
+        l->captureDistance = m_query->value(m_query->record().indexOf("CaptureDistance")).toString();
         l->roadCondition = m_query->value(m_query->record().indexOf("RoadCondition")).toString();
-        l->numberLanes = m_query->value(m_query->record().indexOf("NumOfLanes")).toInt();
+        l->numberOfLanes = m_query->value(m_query->record().indexOf("NumberOfLanes")).toInt();
     } else {
         qDebug() << "query get Location entry failed "<< m_query->lastError();
         return -ERR_QUERY_ENTRY;
@@ -195,19 +208,22 @@ int userDB::Loc_updateEntry(Location *l, DB_QUERY_FLAG flag)
     int retv = 0;
 
     if (flag == QRY_BY_KEY) {
-        QString s = "UPDATE Location SET Description = (:Description),";
+        QString s = "UPDATE Location SET LocIndex = (:LocIndex),";
+                s = s + "Description = (:Description),";
                 s = s + " SpeedLimit = (:SpeedLimit),";
                 s = s + " CaptureSpeed = (:CaptureSpeed),";
+                s = s + " CaptureDistance = (:CaptureDistance),";
                 s = s + " RoadCondition = (:RoadCondition),";
-                s = s + " NumOfLanes = (:NumOfLanes)";
-                s = s + " WHERE LocIndex = (:LocIndex)";
+                s = s + " NumberOfLanes = (:NumberOfLanes)";
 
-        if (m_query->prepare(s)) {
+        retv = m_query->prepare(s);
+        if (retv) {
             m_query->bindValue(":Description", l->description);
             m_query->bindValue(":SpeedLimit", l->speedLimit);
             m_query->bindValue(":CaptureSpeed", l->captureSpeed);
+            m_query->bindValue(":CaptureDistance", l->captureDistance);
             m_query->bindValue(":RoadCondition", l->roadCondition);
-            m_query->bindValue(":NumOfLanes", l->numberLanes);
+            m_query->bindValue(":NumberOfLanes", l->numberOfLanes);
             m_query->bindValue(":LocIndex", l->index);
 
             if (!m_query->exec()) {

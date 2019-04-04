@@ -33,7 +33,7 @@
 #define CMD_MAIN_DEV_INFO       0x07000000
 #define CMD_MAIN_PRT_TICKET     0x08000000
 #define CMD_MAIN_SELF_TEST      0x09000000
-
+#define CMD_MAIN_LOGOUT         0x0A000000
 //global flags
 #define CMD_SUB                 0x10000000  // sub cmd bit
 #define CMD_SAVE                0x30000000  // for all "save" on menus
@@ -50,6 +50,7 @@
 #define CMD_LOC_ENV             0x11000004
 #define CMD_NUM_LANES           0x11000005
 #define CMD_CAPT_SPD            0x11000006
+#define CMD_CAPT_DIST           0x11000007
 
 //sub-command LOC_LOAD/SAVE or LOAD
 //      CMD_LOC_LOAD            0x11100000
@@ -75,6 +76,10 @@
 #define CMD_MODE_FTC            0x15300000
 #define CMD_MODE_LOG_CHASE      0x15000004
 #define CMD_MODE_LOG_STATS      0x15000005
+#define CMD_RADAR_H             0x15000006
+#define CMD_DIST_FRR            0x15000007
+#define CMD_TARGET_H            0x15000008
+#define CMD_LENSFOCAL           0x15000009
 
 //sub-cmds of USER_MGR         (0x04000000)
 #define CMD_ADD_USER            0x14100000
@@ -100,6 +105,15 @@
 #define CMD_SEL_NEW             0x13000003
 #define CMD_SEL_ALL             0x13000004
 #define CMD_LIST_FILES          0x13000005
+
+// sub-cmds of printTicket
+#define CMD_TICKET_PLAYBACK     0x13400000
+#define CMD_TICKET_UPLOAD       0x13500000
+// sub-cmd of ticket view
+#define CMD_TARGET1             0x13400001
+#define CMD_TARGET2             0x13500002
+#define CMD_TARGET3             0x13400003
+#define CMD_TARGET4             0x13500004
 
 //sub-cmd FILE_MGR/UPLOAD_MGR
 //      CMD_UPLOAD              0x13200000
@@ -129,6 +143,9 @@
 #define CMD_GAIN                0x16100007
 #define CMD_RECORD              0x16100008
 #define CMD_STOPRECORD          0x16100009
+#define CMD_MODE                0x1610000A
+#define CMD_EV                  0x1610000B
+
 
 // Playback and photo related
 #define CMD_STOPPLAY            0x16110000
@@ -142,9 +159,10 @@
 
 // sub-commands of SYS_OPT/VIDEO_SETTINGS
 //      CMD_VIDEO               0x16200000
-#define CMD_FRAMES              0x16200001
+#define CMD_CAMERACONFIG        0x16210000
+
 #define CMD_IMAGES              0x16200002
-#define CMD_RESOLUTION          0x16200003
+#define CMD_PICTURDISTANCE      0x16200003
 #define CMD_PREBUFFER           0x16200004
 #define CMD_POSTBUFFER          0x16200005
 //#define CMD_ILLIMINATOR         0x16200006
@@ -343,7 +361,8 @@ enum states {
   STATE_OPERATING, //28
   STATE_OPERATING_MENU, //29
   STATE_OPERATING_SETUP, //30
-  STATE_CALIBRATEMAG3110 //31
+  STATE_CALIBRATEMAG3110, //31
+  STATE_CAMERACONFIG //32
 };
 
 // Playback and Record Interface
@@ -373,8 +392,7 @@ enum states {
 #define WATERMARK_BOTTOMRIGHT 3
 
 #define FRAMESPERSECOND 15
-//#define MAX_RECORDING_SECS  26
-#define MAX_RECORDING_SECS  12
+#define MAX_RECORDING_SECS  25
 #define MAX_WATERMARK_LEN   47
 
 #define APPRO_DATA_LEN  8
@@ -453,7 +471,7 @@ extern qint64 currentSeconds;
 #define JPGSIZE_X 4000
 #define JPGSIZE_Y 3000
   
-#define DISPLAYSCREENSIZE_X 378
-#define DISPLAYSCREENSIZE_Y 270
+#define DISPLAYSCREENSIZE_X 384 //378
+#define DISPLAYSCREENSIZE_Y 272 //270
 
 #endif // GLOBAL_H

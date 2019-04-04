@@ -22,6 +22,9 @@
 #include "back_ground.h"
 #include "utils.h"
 
+#include <iostream>
+#include <fstream>
+
 #ifdef HH1
 #include "TiltSensor/TiltSensor.h"
 #include "widgets/icon_frame/icon_frame.h"
@@ -39,8 +42,6 @@ class topView;
 #define CAM_SCENE_WIDTH (CAM_VIEW_WIDTH - 2)
 #define QUICK_LOGIN_SIM 1       //quick login button simulation
 
-#define TEXT_CAPTURE_FILE "/mnt/mmc/ipnc/capture_data.txt"
-//#define CAPTURE_TEXT
 
 class topView : public QMainWindow
 {
@@ -68,24 +69,40 @@ public:
     config_type RadarConfig;
     void emitHandleTargets();
     // Radar screen related data
+    QPen  mP0;
     QPen  mP1;
     QPen  mP2;
     QPen  mP3;
     QPen  mP4;
+    void violation( void );
 //#endif
+
+    //zxm added for playback
+    QRect mRect1,mRect2, mRect3, mRect4;
+    int frameRate;
+    u_int32_t frameCnt, json_md_fd;
+    saveData violationData;
+    void getData( QString file );
+    float getNumber ( QString file, QString element );
+    coord_struct Video_Coords[MAX_TARGETS];
 	
 protected:
     void closeEvent(QCloseEvent *);
-    bool capture_file_is_open;
 
 signals:
     void clearLogin();
     void powerDown();
+    void lowBatterySignal();
+    void hh1Trigger();
+    void hh1Home();
     void handleTargets();
     void sig_topViewScreenReq(int);
 
 private slots:
     void powerDownSystem();
+    void lowBattery();
+    void hh1TriggerPulled( void );
+    //    void hh1TriggerNotPulled( void ); NOTUSEDNOW
     void initProcesses();
     void TopViewTimerHit();
     void setUserName(QString);
@@ -95,9 +112,11 @@ private slots:
     void openMenuScreen();
     int openLoginScreen();
     int openStartScreen();
+#ifdef LIDARCAM
     void zoomin();
-   void focusMode();
-   void enableRecord();
+    void focusMode();
+#endif
+    void enableRecord();
 #ifdef QUICK_LOGIN_SIM
     void setQuickCode();
 #endif
@@ -113,6 +132,8 @@ public slots:
     void focusLine(vkILine *l);
     void closeVKB();
     void reopenTopScreen();
+    void updateEvidence(OperatFrames *m_oprFrames);
+    void PlaybackExit();
 
 private:
     Ui::topView *ui;
@@ -126,6 +147,14 @@ private:
     int m_prevCmd;  //command processed
     QString m_loginName;
     QString m_passWord;
+    bool m_playbackScreen;
+
+    QFile *logFile; // store local debug logs
+    std::ofstream logDebug;
+    float lastDistance[MAX_TARGETS]; // flags that record the last Radar distance
+    float maxSpeed[MAX_TARGETS];  // store the max speed of the target
+    UINT32 targetID[MAX_TARGETS];  // store last targetID
+    float threshold0;
 
     vkILine *m_le_userName;
     vkILine *m_le_passwd;
@@ -172,11 +201,15 @@ private:
     int initVariables();
     void TopViewInitTimer();
 
-    // radar data
+    float speedLimit;
+    float mCaptureSpeed;
+    unsigned int autoTrigger;
     float m_range;
     float m_newRange;
     float mSpeed;
     float mNewSpeed;
+
+    float mTopSpeed[4];
     bool  mRangeOnly;  // Is it Range only?
     void displaySpeed( float speed=0.0);
     void displayRange ( float distance=0.0);
@@ -190,9 +223,7 @@ private:
     void exeQuickLogin();
 #endif
 
-    // Recording
-    //    int m_recording;
-    int mRecordingSecs;
+    unsigned int mRecordingSecs;
     bool mAutoRecording;
     int mPhotoNum;
 
@@ -215,25 +246,28 @@ private:
 
     //open Main Menu's sub-menu
     void openTopScreen();
-	void findClickButton( QString name);
-	void processHorizontalInput();
-
-	void monitorSpeed();
-	void setRecordingText();
-	void queryCamSetting();
-	void initZoom();
-	void displayZoom( int );
+    void findClickButton( QString name);
+    void processHorizontalInput();
+    
+#ifdef LIDARCAM
+    void monitorSpeed();
+    void initZoom();
+    void displayZoom( int );
+    void lidarCamTriggerPulled();
+    void lidarCamTriggerNotPulled();
+#endif
+    void setRecordingText();
+    void queryCamSetting();
 #ifdef HH1
     QGraphicsLineItem *m_rollLine;
-    QGraphicsLineItem *m_vertLine;
     QGraphicsScene *m_oprScene;
-	OperatFrames *m_oprFrames;
-//    pthread_t radarThreadId;
+    OperatFrames *m_oprFrames;
     CCoordTransforms Transforms;
-    void showTheTarget(int showNum, int targetNum);
+    void showTheTarget(int showNum, int targetNum, coord_struct * Video_Coords);
     int timeStamp;
     int violationTimeStamp;
 #endif
+    SysConfig topView_mConf;
 };
 
 #endif // TOP_VIEW_H

@@ -45,7 +45,9 @@ public:
     void setHardButtonMap( int , QPushButton * );
     void settopView( topView* );
     void setKeyBoardFlag(bool flag1) { mKeyBoard = flag1;}
+#ifdef LIDARCAM
     void Send_Display_Brightness( int );
+#endif
 };
 
 #endif // HARDBUTTONS_H

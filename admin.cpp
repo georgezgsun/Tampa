@@ -77,7 +77,7 @@ QPushButton *admin::getButton(int cmdIndex)
    return NULL;
 }
 
-#define LOC_ENTRY_FLAGS    0X01F    // 5 entries
+#define LOC_ENTRY_FLAGS    0X03F    // 6 entries
 #define USR_ENTRY_FLAGS    0X03F    // 6 entries
 
 void admin::on_pb_loadSettings_clicked()
@@ -110,7 +110,7 @@ void admin::on_pb_loadSettings_clicked()
    char str[128];
    bool locStatus = false, usrStatus = false;
    bool locClear = false, usrClear = false;
-   int index1, row = 0, entryNum, retv;
+   int index1, row = 0, entryNum=0, retv;
    Location loc1;
    Users user1;
    userDB *pDB = u.db();
@@ -191,6 +191,15 @@ void admin::on_pb_loadSettings_clicked()
             if (entryNum)
                entryNum |= 0x04;
          }
+         if (!strncmp(str, "CaptureDistance:", strlen("CaptureDistance:")))
+         {
+            index1 = strlen("CaptureDistance:");
+            while (str[index1] == ' ' || str[index1] == '\t')
+               index1++;
+            loc1.captureDistance = QString::fromUtf8(&str[index1]);
+            if (entryNum)
+               entryNum |= 0x08;
+         }
          if (!strncmp(str, "RoadCondition:", strlen("RoadCondition:")))
          {
             index1 = strlen("RoadCondition:");
@@ -198,15 +207,15 @@ void admin::on_pb_loadSettings_clicked()
                index1++;
             loc1.roadCondition = QString::fromUtf8(&str[index1]);
             if (entryNum)
-               entryNum |= 0x08;
+               entryNum |= 0x10;
          }
          if (!strncmp(str, "NumberLanes:", strlen("NumberLanes:")))
          {
             index1 = strlen("NumberLanes:");
             while (str[index1] == ' ' || str[index1] == '\t')
                index1++;
-            if (entryNum && sscanf(&str[index1], "%d", &loc1.numberLanes) == 1)
-               entryNum |= 0x10;
+            if (entryNum && sscanf(&str[index1], "%d", &loc1.numberOfLanes) == 1)
+               entryNum |= 0x20;
          }
 
          if (entryNum == LOC_ENTRY_FLAGS)
@@ -325,8 +334,9 @@ void admin::on_pb_saveSettings_clicked()
          locs[locNum].description = l.description;
          locs[locNum].speedLimit = l.speedLimit;
          locs[locNum].captureSpeed = l.captureSpeed;
+         locs[locNum].captureDistance = l.captureDistance;
          locs[locNum].roadCondition = l.roadCondition;
-         locs[locNum].numberLanes = l.numberLanes;
+         locs[locNum].numberOfLanes = l.numberOfLanes;
          locNum++;
       }
    }
@@ -374,8 +384,9 @@ void admin::on_pb_saveSettings_clicked()
       fprintf(fp1, "Address:\t%s\n", locs[i].description.toLatin1().data());
       fprintf(fp1, "SpeedLimit:\t%s\n", locs[i].speedLimit.toLatin1().data());
       fprintf(fp1, "CaptureSpeed:\t%s\n", locs[i].captureSpeed.toLatin1().data());
+      fprintf(fp1, "CaptureDistance:\t%s\n", locs[i].captureDistance.toLatin1().data());
       fprintf(fp1, "RoadCondition:\t%s\n", locs[i].roadCondition.toLatin1().data());
-      fprintf(fp1, "NumberLanes:\t%d\n\n", locs[i].numberLanes);
+      fprintf(fp1, "NumberLanes:\t%d\n\n", locs[i].numberOfLanes);
    }
 
    // Write Users to file

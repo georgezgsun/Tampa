@@ -5,104 +5,96 @@
 #include <QPixmap>
 #include "ColdFireCommands.h"
 
-extern QElapsedTimer sysTimer;
-#ifdef IS_TI_ARM
-  //#define FILENAME "/mnt/mmc/ipnc/jsmith/190104_153228_JA001001_00131_1.jpg"
-  //#define FILENAME "/mnt/mmc/ipnc/jsmith/tmptmp123456789.jpg"
-#define FILENAME "/tmp/tmptmp"
-#else
-#define FILENAME "/public/tbuckley/JA001001/190104_153228_JA001001_00131_1.jpg"
-#endif
-#define JPGSIZE_X 4000
-#define JPGSIZE_Y 3000
-  
-#define DISPLAYSCREENSIZE_X 378
-#define DISPLAYSCREENSIZE_Y 270
-
-int pic = 1;
+int zoom = 0;
 
 focus::focus( QWidget *parent ) :
    baseMenu(parent),
    ui(new Ui::focus)
 {
-  
   ui->setupUi(this);
   
   this->connectWidgetSigs();
   
-  m_Timer = new QTimer(this);
+  QGraphicsScene *scene = new QGraphicsScene;
+  QGraphicsView *view = this->ui->gv_cam;
+  QRect *camRect = new QRect(0, 0, CAM_VIEW_WIDTH, this->height());
 
-  connect(m_Timer, SIGNAL(timeout()), this, SLOT(again()));
-
-  again();
-
-  m_Timer->start( 1000 );
+  //set background color to black
+  QColor c(0, 0, 0, 255);
+  QBrush bgB(c);
+  view->setVisible(false);
+  view->setFixedSize(CAM_VIEW_WIDTH, this->height());
+  view->setGeometry(*camRect);
+  scene->setBackgroundBrush(bgB);
+  scene->setSceneRect(*camRect);
+  view->setScene(scene);
+  // Draw a crosshair
+  QPen p(Qt::red);
+  qreal centerX, centerY;
+  centerX = CAM_VIEW_WIDTH >> 1;
+  centerY = height() >> 1;
+  qreal halfLen = centerX / 2;
+  scene->addLine(halfLen, centerY, centerX + halfLen, centerY, p);
+  scene->addLine(centerX, centerY - 30, centerX, centerY + 30, p);
+  scene->update();
+  view->setVisible(true);
+  view->show();
+  connect( ui->pb_exit, SIGNAL(clicked()), this, SLOT(exeExitPressed()) );
+  connect(ui->pb_down, SIGNAL(clicked()), this, SLOT(exeDownSelect()));
+  connect(ui->pb_up, SIGNAL(clicked()), this, SLOT(exeUpSelect()));
+  hardButtons::get().setHardButtonMap( 0, ui->pb_exit );
+  hardButtons::get().setHardButtonMap( 1, NULL );
+  hardButtons::get().setHardButtonMap( 2, ui->pb_up );
+  hardButtons::get().setHardButtonMap( 3, ui->pb_down );
 }
 
 focus::~focus()
 {
+  DEBUG();
+
+  // set zoom to "No zoom"
+  (void)Utils::get().sendCmdToCamera(CMD_ZOOM, 0);
+
   delete ui;
 }
 
-
-void focus::again()
+void focus::exeUpSelect()
 {
-  QString fileName(FILENAME);
-  fileName.append(QString::number(pic++));
-  fileName.append(".jpg");
+  DEBUG() << "zoom is " << zoom;
   
-  DEBUG() << "Start elapsed time " << sysTimer.elapsed() << "fileName " << fileName;
+  zoom++;
 
-  Utils& u = Utils::get();
-  
-  QString filename(fileName);
-  u.takePhoto(filename, 0);
-  
-  
-  QFile Fout( fileName);
-  
-#ifdef IS_TI_ARM
-  int cnt = 0;
-  while ( 1 ) {
-    cnt++;
-    if(!Fout.exists()) {       
-      if( (cnt % 10) == 0) DEBUG() << "Error";
-    } else {
-      if( (cnt % 10) == 0) DEBUG() << "File good";
-      break;
-    }
-    sleep(1);
+  if ( zoom > 2) {
+    zoom = 2;
   }
-#endif
-  
-  DEBUG() << "et " << sysTimer.elapsed();
-  QPixmap image( fileName );
-  DEBUG() << "et " << sysTimer.elapsed();
-  
-  int x = (JPGSIZE_X / 2) - ( DISPLAYSCREENSIZE_X / 2 );
-  int y = (JPGSIZE_Y / 2) - ( DISPLAYSCREENSIZE_Y / 2 );
-  int xx = DISPLAYSCREENSIZE_X;
-  int yy = DISPLAYSCREENSIZE_Y;
-  
-  
-  QRect myROI(x, y, xx, yy);
-  
-  QPixmap croppedImage = image.copy(myROI);
-  DEBUG() << "et " << sysTimer.elapsed();
-  
-  ui->picture->setPixmap(croppedImage);
-  DEBUG() << "et " << sysTimer.elapsed();
 
-#ifdef JUNK  
-#ifdef IS_TI_ARM
-  QFile file ( FILENAME );
-  file.remove();
-  //  DEBUG() << "elapsed time " << sysTimer.elapsed() << " removed " << FILENAME;
-#endif
-#endif
-  
-  u.sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
+  // set zoom to "No zoom"
+  (void)Utils::get().sendCmdToCamera(CMD_ZOOM, zoom );
+  (void)Utils::get().sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
+}
 
-  DEBUG() << "After beep elapsed time " << sysTimer.elapsed();
+void focus::exeDownSelect()
+{
+  DEBUG() << "zoom is " << zoom;
 
+  zoom--;
+
+  if ( zoom < 0 ) {
+    zoom = 0;
+  }
+
+  // set zoom to "No zoom"
+  (void)Utils::get().sendCmdToCamera(CMD_ZOOM, zoom );
+
+  (void)Utils::get().sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
+}
+
+void focus::exeExitPressed()
+{
+  DEBUG();
+  // set zoom to "No zoom"
+  (void)Utils::get().sendCmdToCamera(CMD_ZOOM, 0);
+  (void)Utils::get().sendMbPacket( (unsigned char) CMD_KEYBOARD_BEEP, 0, NULL, NULL );
+
+  close();
 }

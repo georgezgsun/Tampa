@@ -25,14 +25,21 @@ public:
 
     void toggleValue(int cmd, int idx, int f=0);
     void setInitFocus();
-
 private slots:
     void onPbSelectClicked();
     void onPbExitClicked();
     void onPbSelectPressed();
     void onPbUpClicked();
     void onPbDownClicked();
-	void onPbExitPressed();
+    void onPbExitPressed();
+
+    void on_pb_modeVal_clicked();
+
+    void on_pb_shutterVal_clicked();
+
+    void on_pb_gainVal_clicked();
+
+    void on_pb_evVal_clicked();
 
 private:
     Ui::cameraSetup *ui;
@@ -45,20 +52,14 @@ private:
     QList <QWidget *> m_buddyList;  //the nameing label list
     QString m_redText;
     QString m_blueText;
-    QStringList m_zoomList;
-    QStringList m_focusList;
+    QStringList m_modeList;
     QStringList m_shutterList;
-    QStringList m_colorList;
-    QStringList m_irisList;
+    QStringList m_evList;
     QStringList m_gainList;
-    int m_zoomIdx;
-    int m_focusIdx;
+    int m_modeIdx;
     int m_shutterIdx;
-    int m_colorIdx;
-    int m_irisIdx;
+    int m_evIdx;
     int m_gainIdx;
-
-    int m_focusManulVal;    //manul focus value 1--1000
 
     struct CameraSetting m_camSetting;
     void querySetting();

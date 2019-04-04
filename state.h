@@ -16,8 +16,11 @@ public:
 	void setState( int );
 	int getState( void );
 
+	void setPlaybackState( int );
+	int getPlaybackState( void );
+
  protected:
 	int m_state;
-
+	int m_state_playback;
 };
 #endif

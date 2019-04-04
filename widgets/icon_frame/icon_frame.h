@@ -32,26 +32,29 @@ public:
     explicit iconFrame(int width, int height, int numIcons=5, LayoutDirection direction=DIR_VERTICAL, QWidget *parent = 0);
     ~iconFrame();
 
-    void showIcons();
-    void hideIcons();
+    void batterysetPixmap ( QString pix );
+    void GPSsetPixmap ( QString pix );
+    void storagesetPixmap ( QString pix );
+    //    void showIcons();
+    //    void hideIcons();
 
 public slots:
-    void handleHover(HoverType);
-    void timerHit();
+  //    void handleHover(HoverType);
+  //    void timerHit();
 
 protected:
-    bool event(QEvent *e);
+  //    bool event(QEvent *e);
 
 signals:
-    void hoverEvent(HoverType);
+  //    void hoverEvent(HoverType);
 
 private:
     Ui::iconFrame *ui;
 
-    QTimer *m_timer;
+    //    QTimer *m_timer;
     QList<QLabel *> m_iconList;
 
-    int m_hover;
+    //    int m_hover;
     int m_width;
     int m_height;
     int m_numIcons;

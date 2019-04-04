@@ -20,34 +20,25 @@ public:
     void toggleValue(int, int, int f=0);
 
 private slots:
-
-    void on_cb_range_stateChanged(int arg1);
-
-    void on_cb_autoObs_stateChanged(int arg1);
-
-    void on_cb_zone_stateChanged(int arg1);
-
-    void on_cb_incWx_stateChanged(int arg1);
-
-    void on_cb_singleShot_stateChanged(int arg1);
-
-    void on_cb_ftc_stateChanged(int arg1);
-
-    void on_cb_logChase_stateChanged(int arg1);
-
-    void on_cb_logStats_stateChanged(int arg1);
+    void on_pb_lensFocal_clicked();
 
 private:
     Ui::modeSel *ui;
 
     void initLists();
-
     void buildHashTables();
     void setInittoggleValues();
-    void enterOperMode(int mode1, bool status);
-    // Steven Cao, 12/4/2017
-    LIDAR *mpLidar;
-    LIDAR mLidar;
+
+     SysConfig mConf;
+     QStringList m_lensFocal;
+     QStringList m_lensFocalList;
+
+     int m_lensFocalIndex;
+
+     float mOldRadarH;
+     float mOldDistFrR;
+     float mOldTargetH;
+     unsigned int mOldLensFocal;
 
 };
 

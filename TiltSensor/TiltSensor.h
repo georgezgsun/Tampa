@@ -13,7 +13,7 @@ typedef struct
 
 typedef union
 {
-  unsigned short tilt_s;
+  signed short tilt_s;
   unsigned char tilt_c[2];
 } Tilt;
 

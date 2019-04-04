@@ -6,14 +6,14 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>382</width>
-    <height>274</height>
+    <width>480</width>
+    <height>272</height>
    </rect>
   </property>
   <property name="minimumSize">
    <size>
-    <width>382</width>
-    <height>270</height>
+    <width>480</width>
+    <height>272</height>
    </size>
   </property>
   <property name="maximumSize">
@@ -47,16 +47,128 @@
       <number>0</number>
      </property>
      <item>
-      <widget class="QLabel" name="picture">
-       <property name="minimumSize">
+      <widget class="QGraphicsView" name="gv_cam">
+       <property name="maximumSize">
         <size>
          <width>380</width>
          <height>272</height>
         </size>
        </property>
-       <property name="text">
-        <string/>
+       <property name="baseSize">
+        <size>
+         <width>380</width>
+         <height>272</height>
+        </size>
        </property>
+       <property name="verticalScrollBarPolicy">
+        <enum>Qt::ScrollBarAlwaysOff</enum>
+       </property>
+       <property name="horizontalScrollBarPolicy">
+        <enum>Qt::ScrollBarAlwaysOff</enum>
+       </property>
+      </widget>
+     </item>
+     <item alignment="Qt::AlignHCenter">
+      <widget class="QFrame" name="frame">
+       <property name="maximumSize">
+        <size>
+         <width>100</width>
+         <height>272</height>
+        </size>
+       </property>
+       <property name="styleSheet">
+        <string notr="true">border-image: url(:/hh1Graphics/blue-bkg);</string>
+       </property>
+       <property name="frameShape">
+        <enum>QFrame::StyledPanel</enum>
+       </property>
+       <property name="frameShadow">
+        <enum>QFrame::Raised</enum>
+       </property>
+       <layout class="QFormLayout" name="formLayout">
+        <property name="horizontalSpacing">
+         <number>0</number>
+        </property>
+        <property name="verticalSpacing">
+         <number>0</number>
+        </property>
+        <property name="leftMargin">
+         <number>0</number>
+        </property>
+        <property name="topMargin">
+         <number>0</number>
+        </property>
+        <property name="rightMargin">
+         <number>0</number>
+        </property>
+        <property name="bottomMargin">
+         <number>0</number>
+        </property>
+        <item row="0" column="0">
+         <widget class="QPushButton" name="pb_exit">
+          <property name="minimumSize">
+           <size>
+            <width>100</width>
+            <height>66</height>
+           </size>
+          </property>
+          <property name="layoutDirection">
+           <enum>Qt::LeftToRight</enum>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">border-image: url(:/hh1Graphics/blue-button);</string>
+          </property>
+          <property name="text">
+           <string>EXIT</string>
+          </property>
+         </widget>
+        </item>
+        <item row="1" column="0">
+         <widget class="QPushButton" name="pushButton">
+          <property name="minimumSize">
+           <size>
+            <width>100</width>
+            <height>66</height>
+           </size>
+          </property>
+          <property name="text">
+           <string/>
+          </property>
+         </widget>
+        </item>
+        <item row="2" column="0">
+         <widget class="QPushButton" name="pb_up">
+          <property name="minimumSize">
+           <size>
+            <width>100</width>
+            <height>66</height>
+           </size>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">border-image: url(:/hh1Graphics/arrow-up);</string>
+          </property>
+          <property name="text">
+           <string/>
+          </property>
+         </widget>
+        </item>
+        <item row="3" column="0">
+         <widget class="QPushButton" name="pb_down">
+          <property name="minimumSize">
+           <size>
+            <width>100</width>
+            <height>66</height>
+           </size>
+          </property>
+          <property name="styleSheet">
+           <string notr="true">border-image: url(:/hh1Graphics/arrow-down);</string>
+          </property>
+          <property name="text">
+           <string/>
+          </property>
+         </widget>
+        </item>
+       </layout>
       </widget>
      </item>
     </layout>

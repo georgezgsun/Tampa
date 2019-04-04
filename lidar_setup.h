@@ -64,6 +64,7 @@ private:
     unsigned int mOldSpeedTenth;
     unsigned int mOldRangeTenth;
     unsigned int mOldAutoTrigger;
+    unsigned int mOldAudioAlert;
     QStringList m_targetSortList;
     unsigned int m_targetSortIndex;
     unsigned int mOldUnitIndex;

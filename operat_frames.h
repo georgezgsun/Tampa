@@ -36,22 +36,12 @@ protected:
 
 signals:
     void sig_oprScreenReq(int flag);
-    void sig_startRecord();
-    void sig_stopRecord();
-   // void sig_homeScreenReq(int);
 
 private slots:
-    void on_pb_exit_clicked();
-    void on_pb_record_clicked();
-
-    void on_pb_selfTest_clicked();
-
-    void on_pb_spare1_clicked();
 
 private:
     Ui::OperatFrames *ui;
 
-    int m_recording;
     int mLoop1;
 };
 

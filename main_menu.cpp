@@ -37,7 +37,9 @@ void mainMenu::setInitFocus()
 
 void mainMenu::initLists()
 {
-    m_list << ui->pb_locSetup
+
+    m_list << ui->tb_logout
+             << ui-> pb_locSetup
              << ui->pb_modeSel
              << ui->pb_lidarSetup
              << ui->pb_fileMgr
@@ -48,7 +50,8 @@ void mainMenu::initLists()
              << ui->pb_admin
              << ui->pb_prtTicket;
 
-    m_cmdList << CMD_MAIN_LOC_SETUP
+    m_cmdList << CMD_MAIN_LOGOUT
+             << CMD_MAIN_LOC_SETUP
              << CMD_MAIN_MODE_SEL
              << CMD_MAIN_LIDAR_SETUP
              << CMD_MAIN_FILE_MGR
@@ -57,20 +60,19 @@ void mainMenu::initLists()
              << CMD_MAIN_SELF_TEST
              << CMD_ILLIMINATOR
              << CMD_ADMIN
-             << CMD_MAIN_FILE_MGR
              << CMD_MAIN_PRT_TICKET;
 
     this->connectWidgetSigs();
 
 #ifdef HH1
-    ui->gridLayout->removeWidget(ui->pb_modeSel);
-    ui->pb_modeSel->setVisible(false);
+    //ui->gridLayout->removeWidget(ui->pb_modeSel);
+   // ui->pb_modeSel->setVisible(false);
     //    ui->gridLayout->removeWidget(ui->pb_camera);
     //    ui->pb_camera->setVisible(false);
     ui->pb_camera->setText("FOCUS");
-    ui->gridLayout->removeWidget(ui->pb_userMgr);
-    ui->gridLayout->addWidget(ui->pb_userMgr, 0, 1);
-//    ui->pb_userMgr->setGeometry(115, 6, 99, 40);
+    //ui->gridLayout->removeWidget(ui->pb_userMgr);
+    //ui->gridLayout->addWidget(ui->pb_userMgr, 0, 1);
+    //ui->pb_userMgr->setGeometry(115, 6, 99, 40);
 #endif
 }
 
